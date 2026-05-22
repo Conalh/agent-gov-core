@@ -57,13 +57,49 @@ export function normalizeMcpCommand(spec: McpCommandSpec): string {
   return parts.join('\n');
 }
 
-/** Strip `.cmd`/`.exe`/`.bat`/`.ps1` suffix and lowercase on Windows-style paths. */
+/**
+ * Strip `.cmd`/`.exe`/`.bat`/`.ps1` suffix on Windows-style paths and
+ * lowercase those — Windows filesystem lookup is case-insensitive, so
+ * `NPX.CMD`, `npx.cmd`, and `npx` all refer to the same executable and
+ * should produce identical identity strings. POSIX paths (no backslash
+ * separator, no Windows suffix) keep their case because `./curl` and
+ * `./CURL` are genuinely different files there.
+ */
 function normalizeExecutable(cmd: string): string {
   const trimmed = cmd.trim();
   const base = trimmed.replace(/\\/g, '/');
+  const hadWindowsSuffix = /\.(cmd|exe|bat|ps1)$/i.test(base);
   const withoutSuffix = base.replace(/\.(cmd|exe|bat|ps1)$/i, '');
-  return withoutSuffix;
+  // Windows-shaped if the original used `\` separators or had a Windows
+  // executable suffix. In either case, case-fold for cross-machine identity.
+  const isWindowsShaped = hadWindowsSuffix || trimmed.includes('\\');
+  const cased = isWindowsShaped ? withoutSuffix.toLowerCase() : withoutSuffix;
+
+  // De-noise PATH-resolved runtimes: `/usr/bin/node` and `node` both run node.
+  // Only fold when the basename matches a known runtime so custom scripts at
+  // absolute paths (e.g. `/opt/internal/orchestrator.sh`) keep their identity.
+  const basename = cased.split('/').pop() ?? cased;
+  if (KNOWN_RUNTIMES.has(basename.toLowerCase())) {
+    return isWindowsShaped ? basename.toLowerCase() : basename;
+  }
+  return cased;
 }
+
+/**
+ * Common runtime executables whose absolute-path location varies across
+ * machines (PATH lookup resolves them) but whose identity for MCP-config
+ * purposes is the runtime name itself. Conservative — only entries where
+ * basename collapse is provably safe across the platforms an MCP config
+ * might be authored on.
+ */
+const KNOWN_RUNTIMES = new Set([
+  'node', 'npx', 'npm', 'pnpm', 'yarn',
+  'python', 'python3', 'pip', 'pip3', 'pipx', 'uvx', 'uv',
+  'ruby', 'gem', 'bundle',
+  'perl', 'cpan',
+  'bash', 'sh', 'zsh', 'fish', 'powershell', 'pwsh',
+  'deno', 'bun', 'tsx', 'ts-node',
+]);
 
 function normalizePath(p: string): string {
   return p.trim().replace(/\\/g, '/').replace(/\/+$/, '');
@@ -77,6 +113,23 @@ function normalizePath(p: string): string {
  * (npx, uvx, pipx, node).
  */
 const NEUTRAL_BOOLEAN_FLAGS = new Set(['-y', '--yes']);
+
+/**
+ * Flags universally treated as boolean (no value follows) by the runners we
+ * care about. Listed so `canonicalizeArgs` doesn't greedily pair them with the
+ * next positional argument, which would conflate `--verbose pkg` with
+ * `--verbose=pkg`. Unlike NEUTRAL_BOOLEAN_FLAGS these stay in the canonical
+ * form — they're load-bearing (different identity vs. their absence) but
+ * standalone.
+ *
+ * Conservative — only flags where "takes a value" is essentially never their
+ * meaning in any CLI we'd see in an MCP config.
+ */
+const KNOWN_BOOLEAN_FLAGS = new Set([
+  '-v', '-V', '-q', '-h', '-d',
+  '--verbose', '--quiet', '--silent', '--debug', '--help', '--version',
+  '--force', '--dry-run', '--no-cache', '--no-color', '--no-progress', '--json',
+]);
 
 /**
  * Sort *neutral* flag/value pairs so reordering doesn't change identity, but
@@ -105,6 +158,15 @@ function canonicalizeArgs(args: readonly string[]): string[] {
       const eq = a.indexOf('=');
       if (eq !== -1) {
         flagPairs.push([a.slice(0, eq), a.slice(eq + 1)]);
+        continue;
+      }
+      // Known-boolean flags never consume the next argument, so `--verbose pkg`
+      // leaves `pkg` as a positional rather than collapsing into a fake pair.
+      // Without this guard, reordering ['--host', 'localhost', '--verbose', 'pkg']
+      // vs ['--verbose', '--host', 'localhost', 'pkg'] produced different
+      // canonical strings because `--verbose` greedily ate the next non-flag.
+      if (KNOWN_BOOLEAN_FLAGS.has(a)) {
+        flagPairs.push([a, null]);
         continue;
       }
       const next = filtered[i + 1];

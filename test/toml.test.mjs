@@ -162,6 +162,23 @@ extra = "leak"
   );
 });
 
+test('line-ending backslash with trailing whitespace trims correctly (regression)', () => {
+  // Inspection: TOML spec permits a `\` followed by any amount of spaces/tabs
+  // before the newline as a "line-ending backslash" that strips the newline
+  // and trims leading whitespace on the next line. Previously the trailing
+  // spaces caused the parser to fall into readEscape and (per Gemini's claim)
+  // throw — actually it didn't crash but also didn't trim, producing
+  // `"escaped line   \n  next"` instead of `"escaped linenext"`.
+  const r = parseToml('val = """\nescaped line\\   \n   next"""\n');
+  assert.equal(r.val, 'escaped linenext');
+});
+
+test('line-ending backslash with no trailing whitespace still works', () => {
+  // Sanity: the fix mustn't regress the simple case.
+  const r = parseToml('val = """\nescaped\\\nnext"""\n');
+  assert.equal(r.val, 'escapednext');
+});
+
 test('rejects duplicate keys in inline tables (regression)', () => {
   // Inspection: standard tables already rejected duplicate keys, but inline
   // tables silently took the last value. `{ host = "a", host = "b" }` parsed

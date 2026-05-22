@@ -34,6 +34,52 @@ test('.cmd and .exe suffixes are stripped on Windows-style paths', () => {
   assert.equal(a, c);
 });
 
+test('Windows-shaped executable names are case-folded (Cody regression)', () => {
+  // Inspection: NPX.CMD and npx normalized differently, but Windows treats
+  // them as the same executable. Both should produce identical identity.
+  const upper = normalizeMcpCommand({ command: 'NPX.CMD', args: ['mcp-foo'] });
+  const lower = normalizeMcpCommand({ command: 'npx', args: ['mcp-foo'] });
+  const mixed = normalizeMcpCommand({ command: 'NpX.ExE', args: ['mcp-foo'] });
+  assert.equal(upper, lower);
+  assert.equal(mixed, lower);
+
+  // Backslash-pathed Windows commands also case-fold (the backslash makes it
+  // Windows-shaped, so even the drive letter is lowercased)
+  const bsPath = normalizeMcpCommand({ command: 'C:\\Program Files\\NodeJS\\NPX.CMD', args: [] });
+  const bsPathLower = normalizeMcpCommand({ command: 'c:\\program files\\nodejs\\npx.cmd', args: [] });
+  assert.equal(bsPath, bsPathLower);
+});
+
+test('absolute-path runtime collapses to bare name (path de-noise)', () => {
+  // Inspection: PolicyMesh false-positives across cross-platform setups where
+  // one developer's MCP config has `node` and another's has `/usr/local/bin/node`.
+  // Path basename is dropped for KNOWN_RUNTIMES, so they normalize identically.
+  const bare = normalizeMcpCommand({ command: 'node', args: ['x.js'] });
+  const linux1 = normalizeMcpCommand({ command: '/usr/bin/node', args: ['x.js'] });
+  const linux2 = normalizeMcpCommand({ command: '/usr/local/bin/node', args: ['x.js'] });
+  const mac = normalizeMcpCommand({ command: '/opt/homebrew/bin/node', args: ['x.js'] });
+  assert.equal(bare, linux1);
+  assert.equal(bare, linux2);
+  assert.equal(bare, mac);
+});
+
+test('custom script at absolute path KEEPS its full path (not a known runtime)', () => {
+  // Sanity for the path de-noise fix: only KNOWN_RUNTIMES collapse to basename.
+  // Custom scripts at absolute paths carry their location as part of identity.
+  const abs = normalizeMcpCommand({ command: '/opt/internal/orchestrator.sh', args: [] });
+  const bare = normalizeMcpCommand({ command: 'orchestrator.sh', args: [] });
+  assert.notEqual(abs, bare);
+});
+
+test('POSIX-shaped executable names keep their case', () => {
+  // Sanity: case folding only applies when the path is Windows-shaped (had
+  // .cmd/.exe/.bat/.ps1 suffix or backslash separators). POSIX paths stay
+  // case-sensitive because `./curl` and `./CURL` are genuinely different files.
+  const a = normalizeMcpCommand({ command: '/usr/bin/CURL', args: [] });
+  const b = normalizeMcpCommand({ command: '/usr/bin/curl', args: [] });
+  assert.notEqual(a, b);
+});
+
 test('env is included and order-independent', () => {
   const a = normalizeMcpCommand({ command: 'x', env: { A: '1', B: '2' } });
   const b = normalizeMcpCommand({ command: 'x', env: { B: '2', A: '1' } });
@@ -63,6 +109,24 @@ test('url-based MCP', () => {
 test('--key=value treated same as --key value', () => {
   const a = normalizeMcpCommand({ command: 'x', args: ['--foo=bar'] });
   const b = normalizeMcpCommand({ command: 'x', args: ['--foo', 'bar'] });
+  assert.equal(a, b);
+});
+
+test('known-boolean flags do not greedily eat the next positional (regression)', () => {
+  // Inspection: --verbose followed by a non-flag was paired into --verbose=pkg,
+  // so reordering `--host localhost --verbose pkg` vs `--verbose --host localhost pkg`
+  // produced different canonical strings.
+  const a = normalizeMcpCommand({ command: 'foo', args: ['--host', 'localhost', '--verbose', 'my-package'] });
+  const b = normalizeMcpCommand({ command: 'foo', args: ['--verbose', '--host', 'localhost', 'my-package'] });
+  assert.equal(a, b);
+});
+
+test('non-known-boolean flag still pairs with next positional', () => {
+  // Sanity: the fix only changes behavior for flags in KNOWN_BOOLEAN_FLAGS.
+  // Custom or unknown long flags retain the old "absorb next value" heuristic
+  // since we can't know without a per-tool flag database.
+  const a = normalizeMcpCommand({ command: 'foo', args: ['--port', '8080', 'server.js'] });
+  const b = normalizeMcpCommand({ command: 'foo', args: ['--port=8080', 'server.js'] });
   assert.equal(a, b);
 });
 

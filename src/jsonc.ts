@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { toConfigParseError } from './parse-error.js';
 
 export interface JsonObjectWithSource {
   /** Parsed JSON value, or `undefined` if parsing failed. */
@@ -131,6 +132,6 @@ export function readJsonObjectWithSource(path: string): JsonObjectWithSource {
     const parsed = JSON.parse(stripped) as unknown;
     return { value: parsed, json: parsed, text };
   } catch (err) {
-    return { value: undefined, json: undefined, text, parseError: err as Error };
+    return { value: undefined, json: undefined, text, parseError: toConfigParseError(text, err as Error) };
   }
 }

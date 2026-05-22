@@ -69,16 +69,11 @@ function jsonEncodeForRegex(input: string): string {
 export function lineOfTomlKey(text: string, dottedKey: string, scope?: ByteRange): number {
   const parts = splitTomlDottedKey(dottedKey);
   if (parts.length === 0) return 0;
-  const leaf = parts[parts.length - 1]!;
-  const prefix = parts.slice(0, -1);
 
   const lines = text.split(/\r?\n/);
   const inScope = scopeLineFilter(text, scope);
 
-  // Find header range we're inside of.
-  let inTargetTable = prefix.length === 0;
   let currentTable: string[] = [];
-  const targetHeader = prefix.join('.');
   // Track multi-line basic (`"""`) and literal (`'''`) string state. A leaf-key
   // pattern can otherwise match against decoy text inside a multi-line string
   // value — see lineOfTomlKey regression tests.
@@ -98,38 +93,55 @@ export function lineOfTomlKey(text: string, dottedKey: string, scope?: ByteRange
     const headerMatch = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(trimmed);
     if (headerMatch) {
       currentTable = splitTomlDottedKey(headerMatch[1]!);
-      inTargetTable = currentTable.join('.') === targetHeader;
       continue;
     }
     if (trimmed === '' || trimmed.startsWith('#')) continue;
     if (!inScope(lineNumber)) continue;
 
-    // Top-level dotted key like `a.b.c = 1` matches even when we're not under
-    // the named `[a.b]` section — TOML allows declaring `a.b.c` at file root.
-    // Must be checked BEFORE the inTargetTable gate so it can fire from root.
-    if (prefix.length > 0 && currentTable.length === 0) {
-      const dottedPattern = new RegExp(
-        `^\\s*${escapeForRegex(dottedKey)}\\s*=`
+    // Generalized dotted-key matching: if the current table is a strict
+    // prefix of (or equal to) the target dotted key, try matching the
+    // REMAINING dotted segments on this line. Covers all three cases:
+    //  - Top-level (`a.b.c = 1` at root):     currentTable=[]      → match `a.b.c`
+    //  - Inside a parent (`[a]\nb.c = 1`):    currentTable=['a']   → match `b.c`
+    //  - Inside the exact table (`[a.b]\nc = 1`): currentTable=['a','b'] → match `c`
+    const tableIsPrefix =
+      currentTable.length <= parts.length &&
+      currentTable.every((seg, idx) => seg === parts[idx]);
+    if (!tableIsPrefix) continue;
+
+    const remaining = parts.slice(currentTable.length);
+    if (remaining.length === 0) continue;
+
+    // Remaining-as-dotted-key match (covers any depth ≥ 1). Build the
+    // regex from individual segments joined by `\s*\.\s*` so spaced dotted
+    // keys (`a . b . c = 1` — valid TOML) match as well as compact ones.
+    const segmentsPattern = remaining.map(escapeForRegex).join('\\s*\\.\\s*');
+    const dottedPattern = new RegExp(`^\\s*${segmentsPattern}\\s*=`);
+    if (dottedPattern.test(raw)) return lineNumber;
+
+    // If remaining is exactly the leaf, also try the quoted-leaf forms
+    if (remaining.length === 1) {
+      const leafKey = remaining[0]!;
+      const leafPattern = new RegExp(
+        `^\\s*(?:${escapeForRegex(leafKey)}|"${escapeForRegex(leafKey)}"|'${escapeForRegex(leafKey)}')\\s*(?:\\.|=)`
       );
-      if (dottedPattern.test(raw)) return lineNumber;
+      if (leafPattern.test(raw)) return lineNumber;
     }
-
-    if (!inTargetTable) continue;
-
-    // Match leaf key at start of line: bare, "quoted", or 'literal'
-    const leafPattern = new RegExp(
-      `^\\s*(?:${escapeForRegex(leaf)}|"${escapeForRegex(leaf)}"|'${escapeForRegex(leaf)}')\\s*(?:\\.|=)`
-    );
-    if (leafPattern.test(raw)) return lineNumber;
   }
   return 0;
 }
 
 /**
- * Walk a line and update multi-line string state. Each unescaped occurrence of
- * `"""` toggles basic-multiline; each `'''` toggles literal-multiline; the
- * other delimiter is inert while we're inside the first. Returns the state at
- * end-of-line so the next iteration knows whether it's inside a string.
+ * Walk a line and update multi-line string state.
+ *
+ * Inside a basic multi-line string (`"""…"""`), a backslash escapes the next
+ * character — so `\"""` is a literal `"""` inside the value, NOT the string's
+ * closing delimiter. The walker must skip the next character after each `\`
+ * or it'll terminate the string state early and start matching key patterns
+ * against text that's still inside the value.
+ *
+ * Literal multi-line strings (`'''…'''`) do not process escapes per TOML spec,
+ * so backslash is inert there.
  */
 function updateMultilineStringState(
   line: string,
@@ -137,15 +149,36 @@ function updateMultilineStringState(
 ): '"""' | "'''" | null {
   let state = current;
   let pos = 0;
-  while (pos <= line.length - 3) {
-    const window = line.substr(pos, 3);
-    if (state === null) {
+  while (pos < line.length) {
+    if (state === '"""') {
+      // Inside a basic multi-line string — honor backslash escapes
+      if (line[pos] === '\\') {
+        pos += 2; // skip the backslash AND the next character
+        continue;
+      }
+      if (pos <= line.length - 3 && line.substr(pos, 3) === '"""') {
+        state = null;
+        pos += 3;
+        continue;
+      }
+      pos++;
+      continue;
+    }
+    if (state === "'''") {
+      // Literal multi-line — no escapes per spec
+      if (pos <= line.length - 3 && line.substr(pos, 3) === "'''") {
+        state = null;
+        pos += 3;
+        continue;
+      }
+      pos++;
+      continue;
+    }
+    // state === null
+    if (pos <= line.length - 3) {
+      const window = line.substr(pos, 3);
       if (window === '"""') { state = '"""'; pos += 3; continue; }
       if (window === "'''") { state = "'''"; pos += 3; continue; }
-    } else if (state === '"""' && window === '"""') {
-      state = null; pos += 3; continue;
-    } else if (state === "'''" && window === "'''") {
-      state = null; pos += 3; continue;
     }
     pos++;
   }

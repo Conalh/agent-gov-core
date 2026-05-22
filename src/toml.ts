@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { toConfigParseError } from './parse-error.js';
 
 export interface TomlObjectWithSource {
   /** Parsed TOML value, or `undefined` if parsing failed. */
@@ -21,7 +22,7 @@ export function readTomlObject(path: string): TomlObjectWithSource {
     const parsed = parseToml(text);
     return { value: parsed, toml: parsed, text };
   } catch (err) {
-    return { value: undefined, toml: undefined, text, parseError: err as Error };
+    return { value: undefined, toml: undefined, text, parseError: toConfigParseError(text, err as Error) };
   }
 }
 
@@ -144,11 +145,11 @@ class TomlParser {
     // TOML spec violation. Without this guard, `[foo]` silently descended
     // into the last `[[foo]]` entry and let writes leak into it.
     if (this.aotPaths.has(path)) {
-      throw new Error(`Cannot redefine array-of-tables [[${keys.join('.')}]] as a standard table [${keys.join('.')}]`);
+      throw new Error(`Cannot redefine array-of-tables [[${keys.join('.')}]] as a standard table [${keys.join('.')}] at offset ${this.pos}`);
     }
     const table = this.descendTablePath(keys, /*forHeader*/ true);
     if (this.definedTables.has(path)) {
-      throw new Error(`Duplicate table definition: [${keys.join('.')}]`);
+      throw new Error(`Duplicate table definition: [${keys.join('.')}] at offset ${this.pos}`);
     }
     this.definedTables.add(path);
     this.current = table;
@@ -279,7 +280,7 @@ class TomlParser {
     }
     const lastKey = keys[keys.length - 1]!;
     if (Object.prototype.hasOwnProperty.call(node, lastKey)) {
-      throw new Error(`Duplicate key: ${keys.join('.')}`);
+      throw new Error(`Duplicate key: ${keys.join('.')} at offset ${this.pos}`);
     }
     node[lastKey] = value;
     this.expectLineEnd();
@@ -350,9 +351,18 @@ class TomlParser {
       const c = this.src[this.pos]!;
       if (c === '\\') {
         this.pos++;
-        // line-ending backslash: consume to next non-ws line start
-        const next = this.src[this.pos];
+        // Line-ending backslash: per TOML spec, a `\` followed by *any amount
+        // of inline whitespace* (spaces/tabs) and then a newline strips the
+        // newline and trims leading whitespace on the next line. Peek past
+        // trailing inline whitespace before deciding whether this is a
+        // line-ending backslash or a regular escape.
+        let peek = this.pos;
+        while (peek < this.len && (this.src[peek] === ' ' || this.src[peek] === '\t')) {
+          peek++;
+        }
+        const next = this.src[peek];
         if (next === '\n' || next === '\r' || next === undefined) {
+          this.pos = peek;
           while (
             this.pos < this.len &&
             (this.src[this.pos] === ' ' ||
@@ -511,7 +521,7 @@ class TomlParser {
       // Without this guard, `{ host = "a", host = "b" }` silently parsed as
       // `{ host: "b" }` instead of raising.
       if (Object.prototype.hasOwnProperty.call(node, leaf)) {
-        throw new Error(`Duplicate key in inline table: ${keys.join('.')}`);
+        throw new Error(`Duplicate key in inline table: ${keys.join('.')} at offset ${this.pos}`);
       }
       node[leaf] = value;
 

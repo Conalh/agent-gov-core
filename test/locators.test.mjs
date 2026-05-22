@@ -146,12 +146,64 @@ test('lineOfJsonStringValue: still matches values containing colons inside the s
   assert.equal(lineOfJsonStringValue(text, 'host:port'), 2);
 });
 
+test('lineOfTomlKey: escaped triple-quote in multiline string does not terminate state (regression)', () => {
+  // Inspection: `\"""` inside a """...""" basic multiline string is a literal
+  // `"""` within the value, NOT the closing delimiter. The state walker must
+  // skip the next char after each `\` or the string state terminates early
+  // and decoy keys inside the value get matched.
+  const toml = `[server]
+description = """
+This contains an escaped \\""" sequence
+key_decoy = "hidden"
+host = "still inside the multiline"
+"""
+host = "actual real value"
+`;
+  // Expected: line 7 (the actual real host). Bug returned 5 (the decoy inside the string).
+  assert.equal(lineOfTomlKey(toml, 'server.host'), 7);
+});
+
+test('lineOfTomlKey: backslash-escape tracking is only for basic multiline, not literal', () => {
+  // Per TOML spec, '''...''' literal strings don't process escapes AND can't
+  // contain ''' at all. So the only failure mode the v0.5.0 fix needed to
+  // guard against was backslash-escapes in BASIC multiline strings. Verify
+  // the fix doesn't over-apply backslash tracking to literal strings — that
+  // would terminate them late. We probe with a literal string that contains
+  // a backslash but NO triple-quote: the close should still be the first '''.
+  const toml = `[server]
+description = '''
+literal \\n content
+'''
+host = "real"
+`;
+  // The literal string opens on line 2, closes on line 4 (the bare ''').
+  // Line 5 `host = "real"` is outside the string, under [server].
+  assert.equal(lineOfTomlKey(toml, 'server.host'), 5);
+});
+
+test('lineOfTomlKey: dotted key nested inside a parent table (P3 regression)', () => {
+  // Inspection: when [a] is the active header and the file declares `b.c = 42`,
+  // the locator must find `a.b.c` on that line. Previously failed because the
+  // inTargetTable check required exact match against `targetHeader='a.b'`.
+  assert.equal(lineOfTomlKey('[a]\nb.c = 42\n', 'a.b.c'), 2);
+  assert.equal(lineOfTomlKey('[outer]\ninner.leaf = "v"\n', 'outer.inner.leaf'), 2);
+});
+
 test('lineOfTomlKey: top-level dotted keys are reachable (P3 regression)', () => {
   // Caught by Cody: the dotted-key branch sat behind `if (!inTargetTable) continue`,
   // so it never fired when currentTable was empty. Now the dotted-key check
   // runs BEFORE the inTargetTable gate.
   assert.equal(lineOfTomlKey('a.b.c = 1\n', 'a.b.c'), 1);
   assert.equal(lineOfTomlKey('# header\nx.y = "value"\n', 'x.y'), 2);
+});
+
+test('lineOfTomlKey: tolerates whitespace around dots in spaced dotted keys (Cody regression)', () => {
+  // Inspection: TOML allows `a . b . c = 1` (with spaces around dots).
+  // parseToml accepts it but lineOfTomlKey's regex used to require compact
+  // spelling. Now both forms match.
+  assert.equal(lineOfTomlKey('a . b . c = 1\n', 'a.b.c'), 1);
+  assert.equal(lineOfTomlKey('a.b . c = 1\n', 'a.b.c'), 1);
+  assert.equal(lineOfTomlKey('a . b.c = 1\n', 'a.b.c'), 1);
 });
 
 test('lineOfTomlKey: ignores decoy keys inside multi-line basic strings (regression)', () => {
