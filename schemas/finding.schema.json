@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Conalh/agent-gov-core/schemas/finding.schema.json",
+  "title": "Finding",
+  "description": "Canonical Finding emitted by tools in the AI-agent governance suite.",
+  "type": "object",
+  "required": ["tool", "kind", "severity", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "tool": {
+      "type": "string",
+      "enum": [
+        "scope_trail",
+        "policy_mesh",
+        "capability_echo",
+        "task_bound",
+        "session_trail"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^(scope_trail|policy_mesh|capability_echo|task_bound|session_trail)\\.[a-z0-9_]+$",
+      "description": "Namespaced kind: `<tool_kind>.<short_slug>`."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "message": { "type": "string", "minLength": 1 },
+    "detail": { "type": "string" },
+    "location": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 },
+        "endColumn": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "fingerprint": { "type": "string" },
+    "data": { "type": "object" }
+  }
+}
