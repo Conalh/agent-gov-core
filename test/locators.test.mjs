@@ -123,6 +123,37 @@ test('lineOfJsonStringValue: ignores value inside block comment (regression)', (
   assert.equal(lineOfJsonStringValue(text, 'new-host'), 3);
 });
 
+test('lineOfJsonStringValue: skips key-position matches when looking for a value (P0 regression)', () => {
+  // Caught by Cody: `"command":"npx", "args":["command"]` — searching for value
+  // "command" was matching the key on line 2 instead of the array element on
+  // line 4. Negative lookahead for `\s*:` after the closing quote rules out
+  // key-position occurrences.
+  const text = `{
+  "command": "npx",
+  "args": [
+    "command"
+  ]
+}`;
+  assert.equal(lineOfJsonStringValue(text, 'command'), 4);
+});
+
+test('lineOfJsonStringValue: still matches values containing colons inside the string', () => {
+  // Sanity: the negative-lookahead fix must not break values that legitimately
+  // contain colons. `"host:port"` is a value, not a key.
+  const text = `{
+  "address": "host:port"
+}`;
+  assert.equal(lineOfJsonStringValue(text, 'host:port'), 2);
+});
+
+test('lineOfTomlKey: top-level dotted keys are reachable (P3 regression)', () => {
+  // Caught by Cody: the dotted-key branch sat behind `if (!inTargetTable) continue`,
+  // so it never fired when currentTable was empty. Now the dotted-key check
+  // runs BEFORE the inTargetTable gate.
+  assert.equal(lineOfTomlKey('a.b.c = 1\n', 'a.b.c'), 1);
+  assert.equal(lineOfTomlKey('# header\nx.y = "value"\n', 'x.y'), 2);
+});
+
 test('lineOfTomlKey: ignores decoy keys inside multi-line basic strings (regression)', () => {
   // Inspection: a `"""..."""` value can contain text that looks like a key.
   // Without state tracking, the locator matched the decoy inside the string

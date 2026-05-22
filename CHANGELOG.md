@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Under v1.0, minor versions may include breaking changes — see [CONTRIBUTING.md](./CONTRIBUTING.md#backwards-compatibility) for the rules.
 
+## [0.4.4] — 2026-05-22
+
+Cody-led inspection (third reviewer, third round) caught five issues, two of them P0 regressions I introduced in my own v0.4.2 / v0.4.3 fixes. All five fixed here.
+
+### Fixed
+- **P0**: `fingerprintFinding` no longer appends an empty-string segment for findings without `salientKey`. v0.4.3 added `?? ''` which silently changed the hash for every existing finding and broke the v0.4.2 → v0.4.3 backwards-compat claim in my own changelog. Pinned by a new test that asserts the specific v0.4.2-form hash for a salient-less finding.
+- **P0**: TOML parser no longer rejects valid subtable headers repeated under separate array-of-tables entries. `[[fruits]] [fruits.physical] [[fruits]] [fruits.physical]` now parses correctly — each `[[fruits]]` entry resets the "already defined" status of subtable paths under that AOT. My v0.4.2 `definedTables` guard was global per-file when it should have been scoped to the current AOT entry.
+- `lineOfJsonStringValue` no longer matches occurrences in key position. Searching for value `"command"` in `{"command":"npx", "args":["command"]}` now returns the array-element line, not the key. Negative lookahead `(?!\s*:)` after the closing quote.
+- `lineOfTomlKey` now finds top-level dotted keys. `lineOfTomlKey('a.b.c = 1', 'a.b.c')` returns 1 instead of 0 — the dotted-key check was gated behind `inTargetTable` which is false at file root.
+
+### Changed
+- `package-lock.json` resynced to 0.4.4. Was drifting at 0.4.2 because previous releases bumped `package.json` without running `npm install` to refresh the lockfile.
+
+### Tests
+- 6 new cases: pinned v0.4.2-form fingerprint hash, JSON value-vs-key disambiguation (+ colon-in-value sanity check), top-level dotted TOML keys, AOT subtable repeat across entries (+ within-entry duplicate still rejected). 108 total (up from 102).
+
 ## [0.4.3] — 2026-05-22
 
 Third Gemini-inspection round caught one confirmed bug, one disguised-as-suggestion bug, and three feature opportunities. Both bugs fixed here; the feature work is queued for v0.5.0.

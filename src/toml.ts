@@ -176,6 +176,17 @@ class TomlParser {
     } else if (!Array.isArray(arr)) {
       throw new Error(`Key ${keys.join('.')} is not an array-of-tables`);
     }
+    // Each new array entry resets the "already defined" status of any subtables
+    // declared under this AOT path. TOML spec permits the same subtable header
+    // (`[fruits.physical]`) to reappear under each fresh `[[fruits]]` entry — it
+    // binds to the current array entry. Without this clearing, the v0.4.2
+    // definedTables guard rejected the second [fruits.physical] as a duplicate.
+    const aotPathPrefix = keys.join(this.PATH_KEY_SEPARATOR) + this.PATH_KEY_SEPARATOR;
+    for (const definedPath of this.definedTables) {
+      if (definedPath.startsWith(aotPathPrefix)) {
+        this.definedTables.delete(definedPath);
+      }
+    }
     const newTable: Record<string, unknown> = {};
     (arr as unknown[]).push(newTable);
     this.current = newTable;

@@ -172,16 +172,19 @@ export function fingerprintFinding(finding: Finding): string {
   // already, but the library can't trust that — defensive normalization at
   // the hash boundary keeps cross-platform dedupe correct.
   const fileNormalized = finding.location?.file?.replace(/\\/g, '/') ?? '';
-  const parts = [
+  const parts: Array<string | number> = [
     finding.kind,
     fileNormalized,
     finding.location?.line ?? '',
     finding.location?.column ?? '',
-    // salientKey lets multiple distinct findings at the same (kind, file, line)
-    // site keep separate fingerprints. Empty string when absent so the hash
-    // shape is stable across findings that don't need a discriminator.
-    finding.salientKey ?? '',
   ];
+  // salientKey is appended ONLY when present. Appending `?? ''` would add a
+  // trailing pipe even for findings without salientKey, breaking the v0.4.2
+  // hash. This way pre-0.4.3 fingerprints stay stable for findings that
+  // never set salientKey, while new findings with one stay distinct.
+  if (finding.salientKey !== undefined) {
+    parts.push(finding.salientKey);
+  }
   return createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 16);
 }
 

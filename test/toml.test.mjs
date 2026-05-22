@@ -111,6 +111,43 @@ test('floats and underscores', () => {
   assert.deepEqual(r, { a: 1000, b: 3.14 });
 });
 
+test('accepts subtable headers repeated under each AOT entry (P0 regression)', () => {
+  // Caught by Cody: my v0.4.2 fix scoped definedTables globally per-file, which
+  // wrongly rejected the legitimate TOML pattern of declaring `[fruits.physical]`
+  // under each fresh `[[fruits]]` entry. Each AOT entry should reset the
+  // "already defined" status of its subtable paths.
+  const r = parseToml(`[[fruits]]
+name = "apple"
+[fruits.physical]
+color = "red"
+
+[[fruits]]
+name = "banana"
+[fruits.physical]
+color = "yellow"
+`);
+  assert.deepEqual(r, {
+    fruits: [
+      { name: 'apple', physical: { color: 'red' } },
+      { name: 'banana', physical: { color: 'yellow' } },
+    ],
+  });
+});
+
+test('still rejects duplicate subtable header WITHIN the same AOT entry', () => {
+  // Sanity: the fix above mustn't relax duplicate detection within one entry.
+  assert.throws(
+    () => parseToml(`[[fruits]]
+name = "apple"
+[fruits.physical]
+color = "red"
+[fruits.physical]
+color = "also red"
+`),
+    /Duplicate table definition/,
+  );
+});
+
 test('rejects [foo] after [[foo]] (array-of-tables / table mix, regression)', () => {
   // Inspection: a `[foo]` header following `[[foo]]` previously descended
   // into the array's last entry and let writes leak into items[0].

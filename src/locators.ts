@@ -36,11 +36,13 @@ export function lineOfJsonKey(text: string, key: string, scope?: ByteRange): num
  * The value is JSON-encoded before matching so values containing backslashes
  * (e.g. Windows paths like `C:\Temp` written as `"C:\\Temp"` in JSON) are
  * located correctly. The scan ignores JSONC comments so a commented-out
- * matching value does not shadow the real one.
+ * matching value does not shadow the real one. The negative lookahead skips
+ * occurrences in key position (`"command":`) so a value matching a key name
+ * elsewhere in the document doesn't return the key's line.
  */
 export function lineOfJsonStringValue(text: string, value: string, scope?: ByteRange): number {
   const encoded = jsonEncodeForRegex(value);
-  return findLineByRegex(text, new RegExp(`"${encoded}"`), scope);
+  return findLineByRegex(text, new RegExp(`"${encoded}"(?!\\s*:)`), scope);
 }
 
 /**
@@ -99,23 +101,26 @@ export function lineOfTomlKey(text: string, dottedKey: string, scope?: ByteRange
       inTargetTable = currentTable.join('.') === targetHeader;
       continue;
     }
-    if (!inTargetTable) continue;
     if (trimmed === '' || trimmed.startsWith('#')) continue;
     if (!inScope(lineNumber)) continue;
 
-    // Match leaf key at start of line: bare, "quoted", or 'literal'
-    const leafPattern = new RegExp(
-      `^\\s*(?:${escapeForRegex(leaf)}|"${escapeForRegex(leaf)}"|'${escapeForRegex(leaf)}')\\s*(?:\\.|=)`
-    );
-    if (leafPattern.test(raw)) return lineNumber;
-
-    // Also: dotted key like `prefix.leaf = ...` defined at top-level
+    // Top-level dotted key like `a.b.c = 1` matches even when we're not under
+    // the named `[a.b]` section — TOML allows declaring `a.b.c` at file root.
+    // Must be checked BEFORE the inTargetTable gate so it can fire from root.
     if (prefix.length > 0 && currentTable.length === 0) {
       const dottedPattern = new RegExp(
         `^\\s*${escapeForRegex(dottedKey)}\\s*=`
       );
       if (dottedPattern.test(raw)) return lineNumber;
     }
+
+    if (!inTargetTable) continue;
+
+    // Match leaf key at start of line: bare, "quoted", or 'literal'
+    const leafPattern = new RegExp(
+      `^\\s*(?:${escapeForRegex(leaf)}|"${escapeForRegex(leaf)}"|'${escapeForRegex(leaf)}')\\s*(?:\\.|=)`
+    );
+    if (leafPattern.test(raw)) return lineNumber;
   }
   return 0;
 }

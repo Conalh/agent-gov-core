@@ -213,6 +213,23 @@ test('findings without salientKey still produce stable identical fingerprints (r
   assert.equal(a.fingerprint, b.fingerprint);
 });
 
+test('fingerprintFinding produces the v0.4.2 hash for findings without salientKey (P0 regression)', () => {
+  // Caught by Cody: v0.4.3 appended `?? ''` for salientKey, which changed the
+  // hash for every existing finding that didn't set the field. Pin the v0.4.2
+  // hash here so any future change to the hash shape for salient-less findings
+  // gets caught immediately.
+  const f = createFinding({
+    tool: 'scope_trail',
+    name: 'permission_allow_widened',
+    severity: 'high',
+    message: 'x',
+    location: { file: '.claude/settings.json', line: 12 },
+  });
+  // The exact hash produced by `sha256('scope_trail.permission_allow_widened|.claude/settings.json|12|').slice(0, 16)`
+  // — the v0.4.2 form. If this test breaks, dedupe continuity across v0.4.2 → 0.4.4 has broken.
+  assert.equal(f.fingerprint, '45ed781e793c692a');
+});
+
 test('validateFinding accepts salientKey when string, rejects when not', () => {
   const ok = validateFinding({
     tool: 'capability_echo',
