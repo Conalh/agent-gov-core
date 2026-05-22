@@ -87,6 +87,10 @@ Secondary entry point used by consumer test suites. Zero overhead in production 
 - [TaskBound](https://github.com/Conalh/TaskBound) — scope creep after the agent runs (`task_bound.*`)
 - [SessionTrail](https://github.com/Conalh/SessionTrail) — runtime behavior across agent session transcripts (`session_trail.*`)
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the dev workflow, "adding a detector" walkthrough, the dist/release rules, and the cross-tool dogfooding contract.
+
 ## License
 
 MIT.
