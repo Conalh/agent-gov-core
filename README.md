@@ -43,15 +43,15 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `validateFinding(value)` — runtime check against `schemas/finding.schema.json`, returns `{ ok, errors[] }`
 
 ### Config readers
-- `readJsonObjectWithSource(path)` — JSONC reader, string-aware comment + trailing-comma stripping, position-preserving
+- `readJsonObjectWithSource(path)` — JSONC reader, string-aware comment + trailing-comma stripping, position-preserving. Returns `{ value, json, text, parseError? }`; `value` and `json` reference the same parsed object — `json` is kept as a deprecated alias.
 - `stripJsonComments(text)` — same logic exposed for in-memory text
-- `readTomlObject(path)` — TOML reader (sections, arrays of tables, inline tables, multi-line strings, dotted/quoted keys)
+- `readTomlObject(path)` — TOML reader (sections, arrays of tables, inline tables, multi-line strings, dotted/quoted keys). Returns `{ value, toml, text, parseError? }`; `value` and `toml` reference the same parsed object — `toml` is kept as a deprecated alias.
 - `parseToml(text)` — same exposed for text
 
 ### Line locators
-- `lineOfJsonKey(text, key)` — 1-based line of `"key":`
+- `lineOfJsonKey(text, key, scope?)` — 1-based line of `"key":`, optionally scoped to a byte range
 - `lineOfJsonStringValue(text, value, scope?)` — 1-based line of a JSON-encoded value, optionally scoped to a byte range
-- `lineOfTomlKey(text, dottedKey)` — 1-based line of a TOML key
+- `lineOfTomlKey(text, dottedKey, scope?)` — 1-based line of a TOML key, optionally scoped to a byte range. Use scope to disambiguate `[[array]]`-of-tables entries that share the same leaf key.
 
 ### MCP command normalization
 - `normalizeMcpCommand({ command, args, url, serverUrl, env, cwd })` — canonical identity string for an MCP server entry. Drops neutral flags (`-y`, `--yes`), resolves npx/uvx invocations, includes env+cwd in the identity. Used to dedupe `mcp_command_mismatch` false positives when servers are equivalent but syntactically different (`npx -y foo@1.2.3` vs `npx foo@1.2.3`).

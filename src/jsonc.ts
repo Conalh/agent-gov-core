@@ -2,6 +2,12 @@ import { readFileSync } from 'node:fs';
 
 export interface JsonObjectWithSource {
   /** Parsed JSON value, or `undefined` if parsing failed. */
+  value: unknown;
+  /**
+   * @deprecated since v0.4.0 — prefer {@link JsonObjectWithSource.value}.
+   * Kept as a populated alias for backwards compatibility; will be removed
+   * in a future major version.
+   */
   json: unknown;
   /** Raw file text (untouched). */
   text: string;
@@ -120,9 +126,9 @@ export function readJsonObjectWithSource(path: string): JsonObjectWithSource {
   const text = readFileSync(path, 'utf8');
   try {
     const stripped = stripJsonComments(text);
-    const json = JSON.parse(stripped) as unknown;
-    return { json, text };
+    const parsed = JSON.parse(stripped) as unknown;
+    return { value: parsed, json: parsed, text };
   } catch (err) {
-    return { json: undefined, text, parseError: err as Error };
+    return { value: undefined, json: undefined, text, parseError: err as Error };
   }
 }

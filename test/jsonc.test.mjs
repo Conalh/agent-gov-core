@@ -63,3 +63,22 @@ test('readJsonObjectWithSource: surfaces parse error', () => {
   assert.equal(json, undefined);
   assert.ok(parseError instanceof Error);
 });
+
+test('readJsonObjectWithSource: value mirrors json (v0.4 alias)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agc-'));
+  const path = join(dir, 'cfg.json');
+  writeFileSync(path, `{ "a": 1 }`);
+  const result = readJsonObjectWithSource(path);
+  assert.deepEqual(result.value, { a: 1 });
+  assert.deepEqual(result.value, result.json);
+  assert.equal(result.value, result.json);  // referential equality — same parsed object
+});
+
+test('readJsonObjectWithSource: value is undefined when parsing fails', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agc-'));
+  const path = join(dir, 'bad.json');
+  writeFileSync(path, `not even close`);
+  const result = readJsonObjectWithSource(path);
+  assert.equal(result.value, undefined);
+  assert.equal(result.json, undefined);
+});

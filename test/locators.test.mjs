@@ -69,3 +69,24 @@ test('lineOfTomlKey: nested', () => {
 test('lineOfTomlKey: quoted-key section', () => {
   assert.equal(lineOfTomlKey(toml, '"weird.name".x'), 15);
 });
+
+test('lineOfTomlKey: scope disambiguates between two array-of-tables entries', () => {
+  // Both [[items]] entries define `name`. Without scope, the first one wins.
+  assert.equal(lineOfTomlKey(toml, 'items.name'), 9);
+
+  // With scope pinning the second [[items]] block, the second match wins.
+  const secondItemsHeader = toml.indexOf('[[items]]', toml.indexOf('[[items]]') + 1);
+  const weirdHeader = toml.indexOf('["weird.name"]');
+  const secondMatch = lineOfTomlKey(toml, 'items.name', {
+    start: secondItemsHeader,
+    end: weirdHeader,
+  });
+  assert.equal(secondMatch, 12);
+});
+
+test('lineOfTomlKey: scope outside the table returns 0 (not found)', () => {
+  // Restrict to byte range before [server] — server.host shouldn't be found.
+  const serverHeader = toml.indexOf('[server]');
+  const result = lineOfTomlKey(toml, 'server.host', { start: 0, end: serverHeader });
+  assert.equal(result, 0);
+});

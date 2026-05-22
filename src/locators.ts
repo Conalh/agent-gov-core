@@ -34,14 +34,20 @@ export function lineOfJsonStringValue(text: string, value: string, scope?: ByteR
  * locator points to the line where the *leaf* key is defined, scanning forward
  * from the line of the matching `[a.b]` table header (or the start of the file
  * for top-level keys). Bare and quoted leaf keys are both handled.
+ *
+ * If `scope` is supplied, only lines whose byte offsets fall inside the range
+ * are considered. Useful when an outer locator has already pinned the byte
+ * range of a parent table or array entry and you want to find a leaf inside
+ * it without false matches from a sibling table that has the same leaf key.
  */
-export function lineOfTomlKey(text: string, dottedKey: string): number {
+export function lineOfTomlKey(text: string, dottedKey: string, scope?: ByteRange): number {
   const parts = splitTomlDottedKey(dottedKey);
   if (parts.length === 0) return 0;
   const leaf = parts[parts.length - 1]!;
   const prefix = parts.slice(0, -1);
 
   const lines = text.split(/\r?\n/);
+  const inScope = scopeLineFilter(text, scope);
 
   // Find header range we're inside of.
   let inTargetTable = prefix.length === 0;
@@ -49,6 +55,7 @@ export function lineOfTomlKey(text: string, dottedKey: string): number {
   const targetHeader = prefix.join('.');
 
   for (let i = 0; i < lines.length; i++) {
+    const lineNumber = i + 1;
     const raw = lines[i]!;
     const trimmed = raw.trim();
     const headerMatch = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(trimmed);
@@ -59,22 +66,30 @@ export function lineOfTomlKey(text: string, dottedKey: string): number {
     }
     if (!inTargetTable) continue;
     if (trimmed === '' || trimmed.startsWith('#')) continue;
+    if (!inScope(lineNumber)) continue;
 
     // Match leaf key at start of line: bare, "quoted", or 'literal'
     const leafPattern = new RegExp(
       `^\\s*(?:${escapeForRegex(leaf)}|"${escapeForRegex(leaf)}"|'${escapeForRegex(leaf)}')\\s*(?:\\.|=)`
     );
-    if (leafPattern.test(raw)) return i + 1;
+    if (leafPattern.test(raw)) return lineNumber;
 
     // Also: dotted key like `prefix.leaf = ...` defined at top-level
     if (prefix.length > 0 && currentTable.length === 0) {
       const dottedPattern = new RegExp(
         `^\\s*${escapeForRegex(dottedKey)}\\s*=`
       );
-      if (dottedPattern.test(raw)) return i + 1;
+      if (dottedPattern.test(raw)) return lineNumber;
     }
   }
   return 0;
+}
+
+function scopeLineFilter(text: string, scope?: ByteRange): (line: number) => boolean {
+  if (!scope) return () => true;
+  const startLine = lineOfOffset(text, scope.start);
+  const endLine = lineOfOffset(text, Math.max(scope.start, scope.end - 1));
+  return (line: number) => line >= startLine && line <= endLine;
 }
 
 function findLineByRegex(text: string, regex: RegExp, scope?: ByteRange): number {

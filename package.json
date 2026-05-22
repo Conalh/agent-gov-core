@@ -1,6 +1,6 @@
 {
   "name": "agent-gov-core",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Shared primitives for the AI-agent governance suite: Finding schema, JSONC/TOML readers, line locators, MCP command normalization, shell tokenization, and GitHub Action helpers.",
   "type": "module",
   "main": "./dist/index.js",

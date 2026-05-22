@@ -1,6 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseToml } from '../dist/index.js';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseToml, readTomlObject } from '../dist/index.js';
+
+test('readTomlObject: value mirrors toml (v0.4 alias)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agc-toml-'));
+  const path = join(dir, 'cfg.toml');
+  writeFileSync(path, `host = "localhost"\nport = 8080\n`);
+  const result = readTomlObject(path);
+  assert.deepEqual(result.value, { host: 'localhost', port: 8080 });
+  assert.deepEqual(result.value, result.toml);
+  assert.equal(result.value, result.toml);  // referential equality
+});
+
+test('readTomlObject: value is undefined when parsing fails', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agc-toml-'));
+  const path = join(dir, 'bad.toml');
+  writeFileSync(path, `[invalid section\nkey = `);
+  const result = readTomlObject(path);
+  assert.equal(result.value, undefined);
+  assert.equal(result.toml, undefined);
+  assert.ok(result.parseError instanceof Error);
+});
 
 test('basic key=value', () => {
   const r = parseToml(`a = 1\nb = "hello"\nc = true\n`);
