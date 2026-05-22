@@ -84,6 +84,45 @@ test('lineOfTomlKey: scope disambiguates between two array-of-tables entries', (
   assert.equal(secondMatch, 12);
 });
 
+test('lineOfJsonStringValue: matches decoded value containing backslashes (regression)', () => {
+  // Inspection: caller passes the decoded value `C:\Temp`. Source bytes are
+  // `"C:\\Temp"` (backslash escaped). Locator must JSON-encode the input
+  // before matching, otherwise the lookup returns 0.
+  const text = `{
+  "path": "C:\\\\Temp"
+}`;
+  assert.equal(lineOfJsonStringValue(text, 'C:\\Temp'), 2);
+});
+
+test('lineOfJsonStringValue: matches decoded value containing quotes (regression)', () => {
+  // package.json scripts that embed quotes — common pattern.
+  // Source: "postinstall": "echo \"hello\""
+  // Decoded value passed by caller: echo "hello"
+  const text = `{
+  "scripts": {
+    "postinstall": "echo \\"hello\\""
+  }
+}`;
+  assert.equal(lineOfJsonStringValue(text, 'echo "hello"'), 3);
+});
+
+test('lineOfJsonKey: ignores commented-out key (regression)', () => {
+  // JSONC: a `//` comment containing a fake key should not shadow the real key.
+  const text = `{
+  // "command": "fake",
+  "command": "real"
+}`;
+  assert.equal(lineOfJsonKey(text, 'command'), 3);
+});
+
+test('lineOfJsonStringValue: ignores value inside block comment (regression)', () => {
+  const text = `{
+  /* "target": "old-host" */
+  "target": "new-host"
+}`;
+  assert.equal(lineOfJsonStringValue(text, 'new-host'), 3);
+});
+
 test('lineOfTomlKey: scope outside the table returns 0 (not found)', () => {
   // Restrict to byte range before [server] — server.host shouldn't be found.
   const serverHeader = toml.indexOf('[server]');

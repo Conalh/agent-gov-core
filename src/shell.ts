@@ -130,15 +130,43 @@ export function getCommandHead(subcommand: string): string {
     if (!m) break;
     s = s.slice(m[0].length);
   }
-  // Strip leading sudo / env wrappers
-  const wrapperMatch = /^(sudo|nohup|env|exec|command|builtin)\s+(.*)$/.exec(s);
+  // Strip leading sudo / env wrappers, then also strip any wrapper flags
+  // (`sudo -E`, `env -i`) and embedded env vars (`env FOO=1 BAZ=qux curl`)
+  // before recursing. Without this, `sudo -E curl` would return `-E`.
+  const wrapperMatch = /^(sudo|nohup|env|exec|command|builtin|stdbuf|nice|ionice|setsid)\s+(.*)$/.exec(s);
   if (wrapperMatch) {
-    return getCommandHead(wrapperMatch[2]!);
+    return getCommandHead(stripWrapperPrefixes(wrapperMatch[2]!));
   }
 
   // Now extract first token, honoring quoting and obfuscation neutralization.
   const head = readFirstToken(s);
   return deobfuscate(head);
+}
+
+/**
+ * Consume any leading flags (`-x`, `--xxx`, `--xxx=value`) and env var
+ * assignments (`FOO=bar`) so the next recursion finds the real command. We
+ * intentionally do NOT consume a non-flag token after a short flag (so
+ * `sudo -u user curl` still misclassifies as `user` — a known edge case
+ * that we accept rather than maintain a per-wrapper flag database).
+ */
+function stripWrapperPrefixes(input: string): string {
+  let s = input.trimStart();
+  while (s.length > 0) {
+    if (s.startsWith('-')) {
+      const flagMatch = /^\S+\s*/.exec(s);
+      if (!flagMatch) break;
+      s = s.slice(flagMatch[0].length);
+      continue;
+    }
+    const envMatch = /^([A-Za-z_][A-Za-z0-9_]*)=([^\s'"]*|"[^"]*"|'[^']*')\s+/.exec(s);
+    if (envMatch) {
+      s = s.slice(envMatch[0].length);
+      continue;
+    }
+    break;
+  }
+  return s;
 }
 
 function readFirstToken(s: string): string {

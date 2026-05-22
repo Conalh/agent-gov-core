@@ -6,6 +6,8 @@
  * generally treat that as "fall back to file-level annotation".
  */
 
+import { stripJsonComments } from './jsonc.js';
+
 export interface ByteRange {
   /** Inclusive start offset. */
   start: number;
@@ -13,20 +15,42 @@ export interface ByteRange {
   end: number;
 }
 
-/** 1-based line number for the first occurrence of `"key"` followed by `:`. */
+/**
+ * 1-based line number for the first occurrence of `"key"` followed by `:`.
+ *
+ * The key is JSON-encoded before matching so keys containing backslashes or
+ * quotes (rare but legal) are located in the source bytes. The scan ignores
+ * lines inside JSONC `//` and `/* *\/` comments so a commented-out `"key":`
+ * does not shadow the real one.
+ */
 export function lineOfJsonKey(text: string, key: string, scope?: ByteRange): number {
-  const needle = `"${escapeForRegex(key)}"\\s*:`;
-  return findLineByRegex(text, new RegExp(needle), scope);
+  const encoded = jsonEncodeForRegex(key);
+  return findLineByRegex(text, new RegExp(`"${encoded}"\\s*:`), scope);
 }
 
 /**
  * 1-based line number for the first JSON string value equal to `value`.
  * If `scope` is supplied (a byte range), only matches inside that range count —
  * this is the fix for the multi-server-ambiguity bug.
+ *
+ * The value is JSON-encoded before matching so values containing backslashes
+ * (e.g. Windows paths like `C:\Temp` written as `"C:\\Temp"` in JSON) are
+ * located correctly. The scan ignores JSONC comments so a commented-out
+ * matching value does not shadow the real one.
  */
 export function lineOfJsonStringValue(text: string, value: string, scope?: ByteRange): number {
-  const needle = `"${escapeForRegex(value)}"`;
-  return findLineByRegex(text, new RegExp(needle), scope);
+  const encoded = jsonEncodeForRegex(value);
+  return findLineByRegex(text, new RegExp(`"${encoded}"`), scope);
+}
+
+/**
+ * Convert a string to the form it would appear in JSON source bytes, then
+ * regex-escape. `JSON.stringify('C:\\Temp')` yields `'"C:\\\\Temp"'` — slice
+ * off the surrounding quotes to get the inner byte sequence.
+ */
+function jsonEncodeForRegex(input: string): string {
+  const jsonBody = JSON.stringify(input).slice(1, -1);
+  return escapeForRegex(jsonBody);
 }
 
 /**
@@ -93,7 +117,12 @@ function scopeLineFilter(text: string, scope?: ByteRange): (line: number) => boo
 }
 
 function findLineByRegex(text: string, regex: RegExp, scope?: ByteRange): number {
-  const haystack = scope ? text.slice(scope.start, scope.end) : text;
+  // stripJsonComments is position-preserving: it replaces comment bytes with
+  // spaces while leaving newlines intact. Offsets in the stripped text map
+  // 1:1 to offsets in the original text, so line numbers stay correct, but
+  // commented-out keys/values no longer match.
+  const searchable = stripJsonComments(text);
+  const haystack = scope ? searchable.slice(scope.start, scope.end) : searchable;
   const m = regex.exec(haystack);
   if (!m) return 0;
   const offset = (scope ? scope.start : 0) + m.index;

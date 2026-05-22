@@ -81,14 +81,14 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `lineOfTomlKey(text, dottedKey, scope?)` — 1-based line of a TOML key, optionally scoped to a byte range. Use scope to disambiguate `[[array]]`-of-tables entries that share the same leaf key.
 
 ### MCP command normalization
-- `normalizeMcpCommand({ command, args, url, serverUrl, env, cwd })` — canonical identity string for an MCP server entry. Drops neutral flags (`-y`, `--yes`), resolves npx/uvx invocations, includes env+cwd in the identity. Used to dedupe `mcp_command_mismatch` false positives when servers are equivalent but syntactically different (`npx -y foo@1.2.3` vs `npx foo@1.2.3`).
+- `normalizeMcpCommand({ command, args, url, env, cwd })` — canonical identity string for an MCP server entry. Drops neutral confirm flags (`-y`, `--yes`), strips Windows executable suffixes (`.cmd`, `.exe`, `.bat`, `.ps1`), sorts non-neutral flags alphabetically, preserves positional argument order, and includes env + cwd in the identity. Used to dedupe `mcp_command_mismatch` false positives when servers are equivalent but syntactically different (`npx -y foo@1.2.3` vs `npx foo@1.2.3`). Does not interpret what npx/uvx invocations resolve to at runtime — that's outside the substrate's scope.
 
 ### Shell tokenization
 - `tokenizeShell(command)` — quote-aware split on `;`, `|`, `&&`, `||` plus trivial obfuscation neutralization (`c""url` → `curl`, `c\\url` → `curl`)
 - `getCommandHead(subcommand)` — extract the leading verb after tokenization
 
 ### GitHub Action helpers
-- `rankSeverity(s)` — numeric rank `none=0 … critical=4`
+- `rankSeverity(s)` — numeric rank `low=1, medium=2, high=3, critical=4` (matches the schema's closed severity enum; there is no `none`)
 - `passesSeverityThreshold(s, threshold)`, `anyAtOrAbove(findings, threshold)` — fail-on plumbing
 - `emitFindingAnnotation(f)` — render a Finding as a `::warning file=…,line=…,title=…::…` GitHub workflow annotation
 

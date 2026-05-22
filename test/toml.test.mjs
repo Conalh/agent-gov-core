@@ -110,3 +110,27 @@ test('floats and underscores', () => {
   const r = parseToml(`a = 1_000\nb = 3.14\n`);
   assert.deepEqual(r, { a: 1000, b: 3.14 });
 });
+
+test('rejects [foo] after [[foo]] (array-of-tables / table mix, regression)', () => {
+  // Inspection: a `[foo]` header following `[[foo]]` previously descended
+  // into the array's last entry and let writes leak into items[0].
+  assert.throws(
+    () => parseToml(`[[items]]
+name = "first"
+
+[items]
+extra = "leak"
+`),
+    /Cannot redefine array-of-tables/,
+  );
+});
+
+test('rejects duplicate keys in inline tables (regression)', () => {
+  // Inspection: standard tables already rejected duplicate keys, but inline
+  // tables silently took the last value. `{ host = "a", host = "b" }` parsed
+  // as `{ host: "b" }` instead of raising.
+  assert.throws(
+    () => parseToml(`server = { host = "a", host = "b" }\n`),
+    /Duplicate key in inline table/,
+  );
+});

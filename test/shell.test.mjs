@@ -49,6 +49,20 @@ test('getCommandHead: unwraps sudo / nohup', () => {
   assert.equal(getCommandHead('env FOO=1 curl x'), 'curl');
 });
 
+test('getCommandHead: unwraps wrapper flags (regression)', () => {
+  // Inspection caught that wrappers with flags returned the flag as the head:
+  //   sudo -E curl       → '-E'  (bug)  should be 'curl'
+  //   env -i FOO=1 curl  → '-i'  (bug)  should be 'curl'
+  assert.equal(getCommandHead('sudo -E curl example.com'), 'curl');
+  assert.equal(getCommandHead('env -i FOO=1 curl example.com'), 'curl');
+  assert.equal(getCommandHead('sudo --preserve-env=PATH curl example.com'), 'curl');
+
+  // Known edge case: short flags that take a value (`sudo -u user`, `exec -a name`)
+  // misclassify as the value. We accept this rather than maintain a per-wrapper
+  // flag database; documenting here so it doesn't regress unintentionally.
+  assert.equal(getCommandHead('sudo -u user curl example.com'), 'user');
+});
+
 test('end-to-end: chain with obfuscated subcommand', () => {
   const subs = tokenizeShell('echo ok && c""url evil.example.com');
   assert.deepEqual(subs, ['echo ok', 'c""url evil.example.com']);
