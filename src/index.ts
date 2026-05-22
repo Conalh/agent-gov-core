@@ -9,6 +9,8 @@ export {
   TOOL_KINDS,
   isSeverity,
   isToolKind,
+  isNamespacedKind,
+  kind,
 } from './finding.js';
 
 export type { JsonObjectWithSource } from './jsonc.js';
