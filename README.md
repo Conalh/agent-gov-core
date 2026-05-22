@@ -17,19 +17,46 @@ npm install agent-gov-core
 
 Every tool in the suite emits findings against the same schema. The `kind` field is a namespaced string `<tool>.<slug>` so a downstream meta-reviewer can dedupe across tools.
 
-```ts
-import { kind, type Finding } from 'agent-gov-core';
+### Emit a finding
 
-const finding: Finding = {
+```ts
+import { createFinding } from 'agent-gov-core';
+
+const finding = createFinding({
   tool: 'scope_trail',
-  kind: kind('scope_trail', 'permission_allow_widened'),
+  name: 'permission_allow_widened',
   severity: 'high',
   message: 'Claude permission allowlist now includes Bash(npm *).',
   location: { file: '.claude/settings.json', line: 12 },
-};
+});
+// finding.kind === 'scope_trail.permission_allow_widened'
+// finding.fingerprint === '<stable 16-char hex>'
 ```
 
-The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json) enforces the dotted-kind shape — any tool emitting unprefixed kinds will fail validation.
+`createFinding` calls `kind()` to build the namespaced kind, validates the slug shape, and computes a stable `fingerprintFinding(finding)` hash of `(kind, file, line, column)`.
+
+### Validate findings from disk
+
+A downstream meta-reviewer that ingests JSON reports from multiple tools can check each finding against the schema before merging:
+
+```ts
+import { validateFinding } from 'agent-gov-core';
+import { readFileSync } from 'node:fs';
+
+const report = JSON.parse(readFileSync('scopetrail-report.json', 'utf8'));
+for (const f of report.findings) {
+  const result = validateFinding(f);
+  if (!result.ok) {
+    console.error(`Skipping malformed finding: ${result.errors.join('; ')}`);
+    continue;
+  }
+  // ... merge into cross-tool inbox keyed by f.fingerprint ...
+}
+```
+
+### Schema is the contract
+
+The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json) is the single source of truth for the dotted-kind shape, the closed `tool` enum, and the location fields. Any tool emitting unprefixed kinds will fail validation. See [CONTRIBUTING.md](./CONTRIBUTING.md#the-finding-schema-is-the-contract) for how the TypeScript types and JSON schema are kept in lockstep.
 
 ## What's in the library
 
@@ -90,6 +117,8 @@ Secondary entry point used by consumer test suites. Zero overhead in production 
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the dev workflow, "adding a detector" walkthrough, the dist/release rules, and the cross-tool dogfooding contract.
+
+Per-release notes live in [CHANGELOG.md](./CHANGELOG.md).
 
 ## License
 
