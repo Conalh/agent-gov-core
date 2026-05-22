@@ -96,6 +96,7 @@ function canonicalizeArgs(args: readonly string[]): string[] {
   const flagPairs: Array<[string, string | null]> = [];
 
   let sawFlag = false;
+  let postFlagPosIndex = 0;
   for (let i = 0; i < filtered.length; i++) {
     const a = filtered[i]!;
     if (a.startsWith('-')) {
@@ -116,9 +117,13 @@ function canonicalizeArgs(args: readonly string[]): string[] {
       continue;
     }
     if (sawFlag) {
-      // After flags have started, an unattached positional gets a deterministic position
-      // — push it into the sorted-pair bucket as a value-only entry keyed by itself.
-      flagPairs.push([`__pos__${a}`, null]);
+      // After flags have started, an unattached positional retains its
+      // *relative* order via an index prefix. Without the index, two configs
+      // with the same flags but different post-flag positional ordering would
+      // collapse to the same identity — see canonicalizeArgs regression tests.
+      const padIndex = postFlagPosIndex.toString().padStart(8, '0');
+      flagPairs.push([`__pos_${padIndex}__${a}`, null]);
+      postFlagPosIndex++;
     } else {
       positional.push(a);
     }
@@ -128,9 +133,14 @@ function canonicalizeArgs(args: readonly string[]): string[] {
 
   const out: string[] = [...positional];
   for (const [k, v] of flagPairs) {
-    if (k.startsWith('__pos__')) out.push(k.slice('__pos__'.length));
-    else if (v === null) out.push(k);
-    else out.push(`${k}=${v}`);
+    if (k.startsWith('__pos_')) {
+      // Drop the `__pos_NNNNNNNN__` prefix to recover the original argument.
+      out.push(k.slice(k.indexOf('__', 6) + 2));
+    } else if (v === null) {
+      out.push(k);
+    } else {
+      out.push(`${k}=${v}`);
+    }
   }
   return out;
 }

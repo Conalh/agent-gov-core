@@ -24,7 +24,9 @@ export function stripJsonComments(input: string): string {
   const len = input.length;
   const out: string[] = new Array(len);
   let i = 0;
-  let inString: '"' | "'" | null = null;
+  // JSON strings are double-quoted only. Single quotes never enter the state
+  // machine; tracking them was dead code.
+  let inString = false;
   let escape = false;
 
   while (i < len) {
@@ -36,15 +38,15 @@ export function stripJsonComments(input: string): string {
         escape = false;
       } else if (ch === '\\') {
         escape = true;
-      } else if (ch === inString) {
-        inString = null;
+      } else if (ch === '"') {
+        inString = false;
       }
       i++;
       continue;
     }
 
     if (ch === '"') {
-      inString = '"';
+      inString = true;
       out[i] = ch;
       i++;
       continue;
@@ -93,18 +95,18 @@ export function stripJsonComments(input: string): string {
 function stripTrailingCommas(input: string): string {
   const len = input.length;
   const out = input.split('');
-  let inString: '"' | null = null;
+  let inString = false;
   let escape = false;
   for (let i = 0; i < len; i++) {
     const ch = out[i]!;
     if (inString) {
       if (escape) escape = false;
       else if (ch === '\\') escape = true;
-      else if (ch === inString) inString = null;
+      else if (ch === '"') inString = false;
       continue;
     }
     if (ch === '"') {
-      inString = '"';
+      inString = true;
       continue;
     }
     if (ch === ',') {

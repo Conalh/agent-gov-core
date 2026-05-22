@@ -66,6 +66,30 @@ test('--key=value treated same as --key value', () => {
   assert.equal(a, b);
 });
 
+test('post-flag positional args preserve order (regression)', () => {
+  // Bug class caught by Gemini code review: post-flag positional args were
+  // co-sorted with flag pairs, collapsing different orderings to the same
+  // identity. PolicyMesh's mcp_command_mismatch would under-report when two
+  // configs had the same flags but different post-flag positional order.
+  const ab = normalizeMcpCommand({ command: 'node', args: ['--flag', 'x', 'a', 'b'] });
+  const ba = normalizeMcpCommand({ command: 'node', args: ['--flag', 'x', 'b', 'a'] });
+  assert.notEqual(ab, ba);
+});
+
+test('flag order still does not affect identity even with post-flag positionals', () => {
+  // Sanity check that the regression fix didn't over-correct: flags should
+  // still be sortable regardless of where positionals fall.
+  const a = normalizeMcpCommand({
+    command: 'node',
+    args: ['--foo', 'bar', '--baz', 'qux', 'server.js'],
+  });
+  const b = normalizeMcpCommand({
+    command: 'node',
+    args: ['--baz', 'qux', '--foo', 'bar', 'server.js'],
+  });
+  assert.equal(a, b);
+});
+
 test('npx -y <pkg> normalizes the same as npx <pkg> (neutral confirm flag)', () => {
   // Regression: PolicyMesh's mcp_command_mismatch false-positive class.
   // `-y` / `--yes` on npx only suppresses the install prompt — it doesn't

@@ -149,6 +149,26 @@ test('fingerprintFinding is stable across identical findings', () => {
   assert.equal(a.fingerprint, b.fingerprint);
 });
 
+test('fingerprintFinding normalizes Windows-style paths to forward slashes', () => {
+  // A finding emitted on Windows and the same finding emitted on Linux CI
+  // must collapse to the same fingerprint so dedupe works across platforms.
+  const windowsFinding = createFinding({
+    tool: 'capability_echo',
+    name: 'workflow_permission_write',
+    severity: 'high',
+    message: 'x',
+    location: { file: '.github\\workflows\\ci.yml', line: 12 },
+  });
+  const posixFinding = createFinding({
+    tool: 'capability_echo',
+    name: 'workflow_permission_write',
+    severity: 'high',
+    message: 'x',
+    location: { file: '.github/workflows/ci.yml', line: 12 },
+  });
+  assert.equal(windowsFinding.fingerprint, posixFinding.fingerprint);
+});
+
 test('fingerprintFinding differs for different sites', () => {
   const a = createFinding({
     tool: 'capability_echo',

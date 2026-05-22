@@ -149,9 +149,15 @@ export function createFinding(spec: CreateFindingSpec): Finding {
  * // → '7e1c9b3a4d8f6e02'
  */
 export function fingerprintFinding(finding: Finding): string {
+  // Normalize backslash → forward-slash so a finding emitted on Windows
+  // (`src\index.ts`) collapses to the same fingerprint as the same finding
+  // on Linux CI (`src/index.ts`). Consumer git-diff layers usually normalize
+  // already, but the library can't trust that — defensive normalization at
+  // the hash boundary keeps cross-platform dedupe correct.
+  const fileNormalized = finding.location?.file?.replace(/\\/g, '/') ?? '';
   const parts = [
     finding.kind,
-    finding.location?.file ?? '',
+    fileNormalized,
     finding.location?.line ?? '',
     finding.location?.column ?? '',
   ];
