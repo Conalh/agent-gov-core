@@ -41,6 +41,10 @@
       }
     },
     "fingerprint": { "type": "string" },
+    "salientKey": {
+      "type": "string",
+      "description": "Optional discriminator that participates in the fingerprint hash. Set when a single (kind, file, line) site can produce multiple distinct findings (e.g. two suspicious imports on one line). Use a stable value — package name, server name, rule id — not a timestamp."
+    },
     "data": { "type": "object" }
   }
 }

@@ -169,6 +169,71 @@ test('fingerprintFinding normalizes Windows-style paths to forward slashes', () 
   assert.equal(windowsFinding.fingerprint, posixFinding.fingerprint);
 });
 
+test('salientKey discriminates findings on the same (kind, file, line) site (regression)', () => {
+  // Inspection: two distinct findings of the same kind on the same line would
+  // collide under the old fingerprint, and a meta-reviewer would silently
+  // dedupe one of them. salientKey lets the consumer disambiguate them with a
+  // stable per-finding identifier (package name, server name, rule id).
+  const a = createFinding({
+    tool: 'capability_echo',
+    name: 'suspicious_import',
+    severity: 'high',
+    message: 'Suspicious import of pkg-a',
+    location: { file: 'src/x.ts', line: 12 },
+    salientKey: 'pkg-a',
+  });
+  const b = createFinding({
+    tool: 'capability_echo',
+    name: 'suspicious_import',
+    severity: 'high',
+    message: 'Suspicious import of pkg-b',
+    location: { file: 'src/x.ts', line: 12 },
+    salientKey: 'pkg-b',
+  });
+  assert.notEqual(a.fingerprint, b.fingerprint);
+});
+
+test('findings without salientKey still produce stable identical fingerprints (regression)', () => {
+  // Backwards-compatibility: pre-0.4.3 consumers don't set salientKey. Findings
+  // without it must still fingerprint identically across runs.
+  const a = createFinding({
+    tool: 'scope_trail',
+    name: 'permission_allow_widened',
+    severity: 'high',
+    message: 'first run wording',
+    location: { file: '.claude/settings.json', line: 12 },
+  });
+  const b = createFinding({
+    tool: 'scope_trail',
+    name: 'permission_allow_widened',
+    severity: 'high',
+    message: 'wording drifted in v0.5',
+    location: { file: '.claude/settings.json', line: 12 },
+  });
+  assert.equal(a.fingerprint, b.fingerprint);
+});
+
+test('validateFinding accepts salientKey when string, rejects when not', () => {
+  const ok = validateFinding({
+    tool: 'capability_echo',
+    kind: 'capability_echo.suspicious_import',
+    severity: 'high',
+    message: 'x',
+    salientKey: 'pkg-a',
+  });
+  assert.equal(ok.ok, true);
+
+  const bad = validateFinding({
+    tool: 'capability_echo',
+    kind: 'capability_echo.suspicious_import',
+    severity: 'high',
+    message: 'x',
+    salientKey: 42,
+  });
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.some((e) => /salientKey/.test(e)));
+});
+
 test('fingerprintFinding differs for different sites', () => {
   const a = createFinding({
     tool: 'capability_echo',

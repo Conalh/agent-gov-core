@@ -66,7 +66,7 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `isSeverity(v)`, `isToolKind(v)`, `isNamespacedKind(v)` — type guards
 - `kind(tool, name)` — build a namespaced kind without hand-assembling the dotted string
 - `createFinding({tool, name, severity, message, ...})` — convenience constructor that calls `kind()` and `fingerprintFinding()` for you
-- `fingerprintFinding(finding)` — 16-character hex hash of `(kind, file, line, column)`. Stable across runs and message rewordings, so a meta-reviewer can dedupe
+- `fingerprintFinding(finding)` — 16-character hex hash of `(kind, file, line, column, salientKey?)`. Stable across runs and message rewordings, so a meta-reviewer can dedupe. Pass `salientKey` (since v0.4.3) when multiple distinct findings can fire at the same site
 - `validateFinding(value)` — runtime check against `schemas/finding.schema.json`, returns `{ ok, errors[] }`
 
 ### Config readers

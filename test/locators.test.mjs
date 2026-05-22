@@ -123,6 +123,50 @@ test('lineOfJsonStringValue: ignores value inside block comment (regression)', (
   assert.equal(lineOfJsonStringValue(text, 'new-host'), 3);
 });
 
+test('lineOfTomlKey: ignores decoy keys inside multi-line basic strings (regression)', () => {
+  // Inspection: a `"""..."""` value can contain text that looks like a key.
+  // Without state tracking, the locator matched the decoy inside the string
+  // instead of the real key below it.
+  const toml = `[server]
+description = """
+host = "decoy"
+port = 1234
+"""
+host = "real"
+port = 9090
+`;
+  // Expected: line 6 (the real `host = "real"`), not 3 (the decoy inside `description`).
+  assert.equal(lineOfTomlKey(toml, 'server.host'), 6);
+});
+
+test('lineOfTomlKey: ignores decoy keys inside multi-line literal strings (regression)', () => {
+  const toml = `[server]
+description = '''
+host = "decoy"
+'''
+host = "real"
+`;
+  assert.equal(lineOfTomlKey(toml, 'server.host'), 5);
+});
+
+test('lineOfTomlKey: matches first real occurrence when no multi-line string interferes', () => {
+  // Sanity check: the fix doesn't over-correct on plain TOML.
+  const toml = `[server]
+host = "first"
+port = 1234
+`;
+  assert.equal(lineOfTomlKey(toml, 'server.host'), 2);
+});
+
+test('lineOfTomlKey: handles multi-line string that opens and closes on the same line', () => {
+  // A single-line `"""..."""` does NOT enter multi-line state for subsequent lines.
+  const toml = `[server]
+description = """all on one line"""
+host = "real"
+`;
+  assert.equal(lineOfTomlKey(toml, 'server.host'), 3);
+});
+
 test('lineOfTomlKey: scope outside the table returns 0 (not found)', () => {
   // Restrict to byte range before [server] — server.host shouldn't be found.
   const serverHeader = toml.indexOf('[server]');

@@ -77,10 +77,21 @@ export function lineOfTomlKey(text: string, dottedKey: string, scope?: ByteRange
   let inTargetTable = prefix.length === 0;
   let currentTable: string[] = [];
   const targetHeader = prefix.join('.');
+  // Track multi-line basic (`"""`) and literal (`'''`) string state. A leaf-key
+  // pattern can otherwise match against decoy text inside a multi-line string
+  // value — see lineOfTomlKey regression tests.
+  let inMultilineString: '"""' | "'''" | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const lineNumber = i + 1;
     const raw = lines[i]!;
+    const stateAtLineStart = inMultilineString;
+    inMultilineString = updateMultilineStringState(raw, inMultilineString);
+
+    // If we entered this line inside a multi-line string, never match. The key
+    // pattern there is part of a string literal, not a real assignment.
+    if (stateAtLineStart !== null) continue;
+
     const trimmed = raw.trim();
     const headerMatch = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(trimmed);
     if (headerMatch) {
@@ -107,6 +118,33 @@ export function lineOfTomlKey(text: string, dottedKey: string, scope?: ByteRange
     }
   }
   return 0;
+}
+
+/**
+ * Walk a line and update multi-line string state. Each unescaped occurrence of
+ * `"""` toggles basic-multiline; each `'''` toggles literal-multiline; the
+ * other delimiter is inert while we're inside the first. Returns the state at
+ * end-of-line so the next iteration knows whether it's inside a string.
+ */
+function updateMultilineStringState(
+  line: string,
+  current: '"""' | "'''" | null,
+): '"""' | "'''" | null {
+  let state = current;
+  let pos = 0;
+  while (pos <= line.length - 3) {
+    const window = line.substr(pos, 3);
+    if (state === null) {
+      if (window === '"""') { state = '"""'; pos += 3; continue; }
+      if (window === "'''") { state = "'''"; pos += 3; continue; }
+    } else if (state === '"""' && window === '"""') {
+      state = null; pos += 3; continue;
+    } else if (state === "'''" && window === "'''") {
+      state = null; pos += 3; continue;
+    }
+    pos++;
+  }
+  return state;
 }
 
 function scopeLineFilter(text: string, scope?: ByteRange): (line: number) => boolean {

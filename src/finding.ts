@@ -36,6 +36,16 @@ export interface Finding {
   location?: FindingLocation;
   /** Stable identifier for dedupe across runs. Recommended: hash of (kind, location, salient fields). */
   fingerprint?: string;
+  /**
+   * Optional discriminator that participates in the fingerprint hash. Set this
+   * when a single (kind, file, line) site can legitimately host multiple distinct
+   * findings — e.g. two suspicious imports on the same line, two MCP servers in
+   * the same JSON object, two npm dependencies declared in one package.json line.
+   * Without it, the meta-reviewer would dedupe them into one. Use a stable value
+   * that doesn't drift across reruns (package name, server name, rule id) — not
+   * a timestamp or counter.
+   */
+  salientKey?: string;
   /** Optional structured metadata; downstream meta-reviewers may inspect it. */
   data?: Record<string, unknown>;
 }
@@ -95,6 +105,12 @@ export interface CreateFindingSpec {
   detail?: string;
   location?: FindingLocation;
   data?: Record<string, unknown>;
+  /**
+   * See {@link Finding.salientKey}. Pass when the same (kind, file, line) site
+   * can produce multiple distinct findings that must not collapse to one
+   * fingerprint.
+   */
+  salientKey?: string;
   /** Optional explicit fingerprint. If omitted, {@link fingerprintFinding} is computed. */
   fingerprint?: string;
 }
@@ -124,6 +140,7 @@ export function createFinding(spec: CreateFindingSpec): Finding {
   };
   if (spec.detail !== undefined) finding.detail = spec.detail;
   if (spec.location !== undefined) finding.location = spec.location;
+  if (spec.salientKey !== undefined) finding.salientKey = spec.salientKey;
   if (spec.data !== undefined) finding.data = spec.data;
   finding.fingerprint = spec.fingerprint ?? fingerprintFinding(finding);
   return finding;
@@ -160,6 +177,10 @@ export function fingerprintFinding(finding: Finding): string {
     fileNormalized,
     finding.location?.line ?? '',
     finding.location?.column ?? '',
+    // salientKey lets multiple distinct findings at the same (kind, file, line)
+    // site keep separate fingerprints. Empty string when absent so the hash
+    // shape is stable across findings that don't need a discriminator.
+    finding.salientKey ?? '',
   ];
   return createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 16);
 }
@@ -177,6 +198,7 @@ const FINDING_ALLOWED_KEYS = new Set([
   'detail',
   'location',
   'fingerprint',
+  'salientKey',
   'data',
 ]);
 
@@ -213,6 +235,9 @@ export function validateFinding(value: unknown): FindingValidationResult {
   }
   if (v.fingerprint !== undefined && typeof v.fingerprint !== 'string') {
     errors.push('fingerprint must be a string when present');
+  }
+  if (v.salientKey !== undefined && typeof v.salientKey !== 'string') {
+    errors.push('salientKey must be a string when present');
   }
   if (v.data !== undefined && (v.data === null || typeof v.data !== 'object' || Array.isArray(v.data))) {
     errors.push('data must be an object when present');
