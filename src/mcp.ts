@@ -19,6 +19,15 @@ export interface McpCommandSpec {
  * Non-goals:
  *  - Understanding tool semantics. Two truly-different `--flag value` pairs hash
  *    differently even if the tool would treat them equivalently.
+ *
+ * @example
+ * normalizeMcpCommand({ command: 'npx.cmd', args: ['-y', 'mcp-foo', '--token', 'abc'] });
+ * normalizeMcpCommand({ command: 'npx',     args: ['mcp-foo', '--token', 'abc']      });
+ * // → both produce the same canonical string
+ *
+ * @example
+ * normalizeMcpCommand({ url: 'https://example.com/mcp/' });
+ * // → 'url=https://example.com/mcp\nargs='
  */
 export function normalizeMcpCommand(spec: McpCommandSpec): string {
   const parts: string[] = [];

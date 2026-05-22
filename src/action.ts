@@ -36,6 +36,16 @@ export function anyAtOrAbove(findings: readonly Finding[], threshold: Severity):
  * `critical` and `high` map to `::error`; everything else maps to `::warning`.
  * `notice` is intentionally not used — surfacing low findings as `warning` makes
  * them visible in the Files Changed tab.
+ *
+ * @example
+ * emitFindingAnnotation({
+ *   tool: 'capability_echo',
+ *   kind: 'capability_echo.workflow_permission_write',
+ *   severity: 'high',
+ *   message: 'Workflow grants contents: write to PR-triggered jobs.',
+ *   location: { file: '.github/workflows/ci.yml', line: 12 },
+ * });
+ * // → '::error file=.github/workflows/ci.yml,line=12,title=[capability_echo.workflow_permission_write] high::Workflow grants contents: write to PR-triggered jobs.'
  */
 export function emitFindingAnnotation(finding: Finding): string {
   const level = finding.severity === 'critical' || finding.severity === 'high'

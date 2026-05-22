@@ -38,6 +38,9 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `SEVERITIES`, `TOOL_KINDS` — runtime arrays of the enum values
 - `isSeverity(v)`, `isToolKind(v)`, `isNamespacedKind(v)` — type guards
 - `kind(tool, name)` — build a namespaced kind without hand-assembling the dotted string
+- `createFinding({tool, name, severity, message, ...})` — convenience constructor that calls `kind()` and `fingerprintFinding()` for you
+- `fingerprintFinding(finding)` — 16-character hex hash of `(kind, file, line, column)`. Stable across runs and message rewordings, so a meta-reviewer can dedupe
+- `validateFinding(value)` — runtime check against `schemas/finding.schema.json`, returns `{ ok, errors[] }`
 
 ### Config readers
 - `readJsonObjectWithSource(path)` — JSONC reader, string-aware comment + trailing-comma stripping, position-preserving

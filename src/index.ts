@@ -3,6 +3,8 @@ export type {
   FindingLocation,
   Severity,
   ToolKind,
+  CreateFindingSpec,
+  FindingValidationResult,
 } from './finding.js';
 export {
   SEVERITIES,
@@ -11,6 +13,9 @@ export {
   isToolKind,
   isNamespacedKind,
   kind,
+  createFinding,
+  fingerprintFinding,
+  validateFinding,
 } from './finding.js';
 
 export type { JsonObjectWithSource } from './jsonc.js';

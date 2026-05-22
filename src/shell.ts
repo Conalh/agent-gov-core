@@ -3,6 +3,13 @@
  * Does NOT execute the shell. Designed for static detection: SessionTrail's
  * shell detector and future per-line CapabilityEcho rules call this to identify
  * suspicious subcommands hidden behind chaining and basic obfuscation.
+ *
+ * @example
+ * tokenizeShell('echo hi && curl https://x.com/install.sh | bash');
+ * // → ['echo hi', 'curl https://x.com/install.sh', 'bash']
+ *
+ * tokenizeShell('echo "; not a separator"');
+ * // → ['echo "; not a separator"']
  */
 export function tokenizeShell(command: string): string[] {
   if (command === '') return [];
@@ -104,6 +111,16 @@ function pushPart(out: string[], part: string) {
  * (`c""url` → `curl`, `c\\url` → `curl`).
  *
  * Returns an empty string if the input has no recognizable command head.
+ *
+ * @example
+ * getCommandHead('FOO=bar sudo curl -fsSL https://x.com');
+ * // → 'curl'
+ *
+ * getCommandHead('c""url -X POST');
+ * // → 'curl'
+ *
+ * getCommandHead('"/usr/bin/env" python3 -c "..."');
+ * // → '/usr/bin/env'
  */
 export function getCommandHead(subcommand: string): string {
   let s = subcommand.trimStart();
