@@ -54,6 +54,28 @@ for (const f of report.findings) {
 }
 ```
 
+### Merge reports across tools (the meta-reviewer pipeline)
+
+A cross-tool meta-reviewer ingests JSON reports from N tools, dedupes findings by fingerprint, applies a severity threshold, and rolls up an aggregate rating. The library ships this as `mergeFindings`:
+
+```ts
+import { mergeFindings } from 'agent-gov-core';
+import { readFileSync } from 'node:fs';
+
+const reports = [
+  JSON.parse(readFileSync('scopetrail-report.json', 'utf8')),
+  JSON.parse(readFileSync('policymesh-report.json', 'utf8')),
+  JSON.parse(readFileSync('capabilityecho-report.json', 'utf8')),
+];
+
+const merged = mergeFindings(reports, { threshold: 'medium' });
+console.log(`Merged rating: ${merged.rating}`);
+console.log(`${merged.findings.length} unique findings across ${merged.sources.length} tools`);
+console.log(`Dropped ${merged.droppedBelowThreshold} below threshold; collapsed ${merged.duplicateCollapsed} duplicates`);
+```
+
+Malformed reports go to `merged.invalidReports`; malformed individual findings go to `merged.invalidFindings` — neither is silently dropped, so a meta-reviewer can surface what went wrong.
+
 ### Schema is the contract
 
 The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json) is the single source of truth for the dotted-kind shape, the closed `tool` enum, and the location fields. Any tool emitting unprefixed kinds will fail validation. See [CONTRIBUTING.md](./CONTRIBUTING.md#the-finding-schema-is-the-contract) for how the TypeScript types and JSON schema are kept in lockstep.
@@ -68,6 +90,23 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `createFinding({tool, name, severity, message, ...})` — convenience constructor that calls `kind()` and `fingerprintFinding()` for you
 - `fingerprintFinding(finding)` — 16-character hex hash of `(kind, file, line, column, salientKey?)`. Stable across runs and message rewordings, so a meta-reviewer can dedupe. Pass `salientKey` (since v0.4.3) when multiple distinct findings can fire at the same site
 - `validateFinding(value)` — runtime check against `schemas/finding.schema.json`, returns `{ ok, errors[] }`
+
+### Hardcoded secret detection (since v0.7.0)
+- `matchSecret(value, options?)` — scans for provider-prefix credentials (Anthropic, OpenAI, GitHub, AWS, Slack, Google, GitLab, npm, Docker, Stripe, plus env/header-gated hex tokens). Returns `{ provider }` — **never the literal credential**. Pass `envOrHeaderContext: true` only when scanning env/header values.
+- `SECRET_PATTERNS` — read-only constant; the active provider set is pinned by golden tests so additions stay non-breaking.
+
+### Exception baselines (since v0.7.0)
+- `applyExceptions(findings, exceptions, now?)` — suppress findings matched by `kind` + optional `salientKey` + optional `pathPrefix`. Expired exceptions re-surface the finding with severity downgraded to `'low'` and an `[EXPIRED WHITELIST]` prefix so stale baselines stay visible.
+- `validateException(value)` — runtime check for well-formed exception entries loaded from JSON/YAML.
+
+### Report envelope and merge (since v0.6.0)
+- `Report` — canonical multi-tool envelope wrapping a `Finding[]` with `schemaVersion`, `tool`, `rating`, optional `toolVersion`/`runId`/`conversationId`/`baseRef`/`headRef`, and tool-specific extension data in `data`
+- `Report.conversationId` — opt-in session identifier matching OpenTelemetry's [`gen_ai.conversation.id`](https://opentelemetry.io/docs/specs/semconv/gen-ai/) so governance findings and runtime traces can correlate by the same string. See [docs/INTEROP-OTEL.md](./docs/INTEROP-OTEL.md) for the full cross-walk.
+- `REPORT_SCHEMA_VERSION` — current envelope version (`'1.0'`)
+- `createReport({tool, findings, ...})` — sets `schemaVersion` and derives `rating` from max finding severity
+- `maxSeverity(findings)` — returns `'none' | Severity`, used by `createReport`
+- `validateReport(value)` — strict envelope check including each finding; returns `{ ok, errors[] }`
+- `mergeFindings(reports, opts?)` — combine N tool reports, dedupe by fingerprint, apply threshold, roll up rating; preserves both invalid envelopes and invalid findings separately so nothing is silently dropped. Propagates `conversationId` to the merged report iff every source agrees on it.
 
 ### Config readers
 - `readJsonObjectWithSource(path)` — JSONC reader, string-aware comment + trailing-comma stripping, position-preserving. Returns `{ value, json, text, parseError? }`. When the underlying parser provides a byte offset, `parseError` is a `ConfigParseError` carrying `line`/`column`/`rawOffset` instead of a raw `Error`.

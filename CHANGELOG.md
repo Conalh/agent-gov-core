@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Under v1.0, minor versions may include breaking changes — see [CONTRIBUTING.md](./CONTRIBUTING.md#backwards-compatibility) for the rules.
 
+## [0.7.0] — 2026-05-22
+
+**The pre-v1.0 consolidation release.** Bundles everything that was queued for v0.6.0 (report envelope + merge layer + OTel GenAI interop) plus two universal detectors promoted from consumer repos: `matchSecret` (from PolicyMesh) and `applyExceptions` (unifying PolicyMesh's `subject` and TaskBound's `allow_paths` shapes).
+
+No breaking changes to the v0.5.0 surface — additive minor bump. One npm publish covers all of it.
+
+This is the last release before v1.0 freeze. The remaining gate is consumer-side: at least one tool wiring `generateWorkflowSummary` end-to-end, then v1.0 with semver guarantees on the contract pinned by the golden tests.
+
+### Added — Report envelope
+- `Report` interface — canonical multi-tool envelope with `schemaVersion`, `tool`, `rating`, optional `toolVersion`/`runId`/`conversationId`/`baseRef`/`headRef`, `findings: Finding[]`, and tool-specific extension `data`.
+- `Report.conversationId` (optional) — agent session / PR review / thread identifier. Matches OpenTelemetry's `gen_ai.conversation.id` semantic convention so a consumer can pass the same string into both governance reports and OTel traces, then correlate them downstream.
+- `REPORT_SCHEMA_VERSION` const (`'1.0'`).
+- `schemas/report.schema.json` — JSON schema for the envelope, exposed via the package's `./schemas/report.schema.json` export.
+- `createReport({tool, findings, ...})` — convenience constructor; sets `schemaVersion` and computes `rating` from max finding severity (unless overridden).
+- `maxSeverity(findings)` — helper that returns `'none' | Severity` across a finding list.
+- `validateReport(value)` — strict envelope check that also validates each contained finding and flags cross-field inconsistencies (e.g. rating below implied max).
+
+### Added — Merge layer
+- `mergeFindings(reports, opts?)` — combine N tool reports into one normalized `MergedReport`:
+  - Deduplicates by `Finding.fingerprint`. Default policy: keep highest severity; `duplicatePolicy: 'first'` keeps the first occurrence.
+  - Optional severity `threshold` drops findings below the requested level into a counted `droppedBelowThreshold` field.
+  - Aggregates rating from the surviving findings, not source ratings — so threshold filtering correctly demotes the merged rating.
+  - Sorts findings by severity, highest first.
+  - Propagates `conversationId` to the merged report iff every source agrees. Cross-conversation mixing leaves the field intentionally empty so a meta-reviewer can detect misuse.
+  - **Never silently drops bad data**: malformed envelopes go to `invalidReports[]`, individual malformed findings go to `invalidFindings[]`. A single bad finding in a tool's report doesn't poison the rest of that report.
+- `MergeOptions`, `MergeSource` (with optional `conversationId`), `MergedReport` (with optional `conversationId`), `InvalidReport`, `InvalidFinding` types.
+
+### Added — OpenTelemetry GenAI interop
+- `docs/INTEROP-OTEL.md` — explicit cross-walk between `agent-gov-core` types and OTel's [`gen_ai.*` semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Maps `Report.conversationId` ↔ `gen_ai.conversation.id`, documents why we adopt one bridge field and not the whole namespace, and shows a paired-emission pattern for orgs running OTel-instrumented agents alongside governance tools.
+
+### Added — Hardcoded secret detection (promoted from PolicyMesh)
+- `matchSecret(value, options?)` — scans a string for provider-prefix credentials and returns `{ provider }` (never the literal credential). Built-in patterns: Anthropic, OpenAI (sk- + sk-proj-), GitHub (PAT + classic), Slack, AWS, Google, GitLab, npm, Docker, Stripe, plus a length-restricted hex token pattern gated to env/header context to avoid commit-SHA false positives.
+- `MatchSecretOptions.envOrHeaderContext` — opt-in flag for the hex token pattern.
+- `SECRET_PATTERNS` — exported read-only constant table; golden-tested so additions are non-breaking but removals require a major bump.
+- `SecretMatch` type.
+- `env:VAR` references are never flagged (Codex notation for env-var lookups).
+
+### Added — Exception baselines (promoted + unified from PolicyMesh + TaskBound)
+- `applyExceptions(findings, exceptions, now?)` — suppress (or downgrade-on-expiry) findings matched by `kind` + optional `salientKey` + optional `pathPrefix`. PolicyMesh's `.policymesh-exceptions.json` shape and TaskBound's `.taskbound.yml` `ignore_kinds`/`allow_paths` shape both map cleanly onto this unified primitive.
+- Expired exceptions don't silently drop — they re-surface with severity downgraded to `'low'` and an `[EXPIRED WHITELIST]` message prefix so stale baselines stay visible. Reason text propagates to `finding.data.exceptionReason`.
+- `validateException(value)` — runtime check for well-formed exception entries.
+- `Exception`, `ApplyExceptionsResult` types.
+
+### Tests
+- 57 new cases. 220 total (up from 163). Breakdown:
+  - Report: 17 (schemaVersion pinning, rating derivation, explicit-rating override, validateReport accepting/rejecting envelope-level errors, finding-tool consistency, unknown property rejection, downgrade-allowed/upgrade-flagged rating consistency, conversationId passthrough + type check).
+  - Merge: 14 (empty input, cross-tool combine, fingerprint dedup with `highest_severity` and `first` policies, salientKey-disambiguated findings stay separate, threshold filtering, malformed report → invalidReports, malformed finding → invalidFindings, severity-sorted output, aggregate-rating-reflects-survivors, source provenance, conversationId agreement/disagreement/partial-coverage propagation).
+  - Secrets: 11 (each provider class detected, env: refs never flagged, empty/short input ignored, hex token gated to env/header context, non-hex 40-char string rejected, never-leak-literal contract, golden-pinned `SECRET_PATTERNS` provider set).
+  - Exceptions: 15 (empty input identity, suppress by kind/salientKey/pathPrefix, perpetual-active when no expires, expired surfacing with downgrade/prefix/reason, non-matching kind/salientKey passthrough, pathPrefix without location.file safely non-matches, malformed expires treated as never-expires, future expires stays active, validateException accept/reject paths).
+
 ## [0.5.0] — 2026-05-22
 
 Three additive features completing the queue from Gemini's third inspection round, plus five correctness fixes from a deep code-level inspection done before publish. No breaking changes — existing exports and call signatures unchanged.

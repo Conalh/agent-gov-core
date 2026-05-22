@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Conalh/agent-gov-core/schemas/report.schema.json",
+  "title": "Report",
+  "description": "Canonical multi-tool report envelope emitted by tools in the AI-agent governance suite. Wraps a `Finding[]` with provenance, rating, and optional tool-specific extension data so a cross-tool meta-reviewer can ingest reports from N tools through one shape.",
+  "type": "object",
+  "required": ["schemaVersion", "tool", "rating", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Envelope schema version. Currently '1.0'. Future incompatible envelope changes require a major bump on this field; readers must reject unknown major versions."
+    },
+    "tool": {
+      "type": "string",
+      "enum": ["scope_trail", "policy_mesh", "capability_echo", "task_bound", "session_trail"],
+      "description": "Originating tool. Matches the `Finding.tool` enum."
+    },
+    "toolVersion": {
+      "type": "string",
+      "description": "Semver of the emitting tool (e.g. '0.1.18'). Optional; helps a meta-reviewer attribute findings to a specific release."
+    },
+    "runId": {
+      "type": "string",
+      "description": "Unique identifier for this run. Optional; useful when merging reports from concurrent runs or comparing runs over time."
+    },
+    "conversationId": {
+      "type": "string",
+      "description": "Identifier for the agent session, PR review, or thread this run belongs to. Distinct from runId (one conversation can produce many runs). Matches OpenTelemetry's gen_ai.conversation.id semantic convention — if a consumer also emits OTel traces about the same agent session, pass the same string here."
+    },
+    "baseRef": {
+      "type": "string",
+      "description": "Git base ref for diff-mode tools (ScopeTrail, CapabilityEcho, TaskBound). Omit for non-diff tools (PolicyMesh, SessionTrail)."
+    },
+    "headRef": {
+      "type": "string",
+      "description": "Git head ref for diff-mode tools. Omit for non-diff tools."
+    },
+    "rating": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high", "critical"],
+      "description": "Aggregate severity for this report. 'none' iff `findings` is empty or all findings fell below the tool's fail-on threshold."
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "./finding.schema.json" },
+      "description": "Findings emitted by this tool run."
+    },
+    "data": {
+      "type": "object",
+      "description": "Tool-specific extension data (e.g. PolicyMesh's `effectiveUnion`, CapabilityEcho's `surfaceSummary`, ScopeTrail's `scopeMatchCount`). Opaque to a cross-tool meta-reviewer but preserved so each tool's UX can read its own extensions back from a merged report."
+    }
+  }
+}
