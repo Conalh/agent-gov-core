@@ -65,6 +65,13 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `passesSeverityThreshold(s, threshold)`, `anyAtOrAbove(findings, threshold)` — fail-on plumbing
 - `emitFindingAnnotation(f)` — render a Finding as a `::warning file=…,line=…,title=…::…` GitHub workflow annotation
 
+### Test fixtures (`agent-gov-core/test-utils`)
+Secondary entry point used by consumer test suites. Zero overhead in production — only loaded when test files import it.
+
+- `writeFiles(dir, { relPath: content })` — write a map of files under `dir`, creating parent directories
+- `makeGitRepo({ initialFiles?, initialMessage? })` → `{ repo, commit, head, git, cleanup }` — temp repo on branch `main` with placeholder identity; `commit()` writes files and commits, returning the new SHA
+- `makeOldNewFixture({ old, new })` → `{ old, new, cleanup }` — two sibling temp directories for diff-mode CLI tests
+
 ## Principles
 
 - **Zero runtime dependencies.** Real TOML, JSONC, MCP normalization, shell tokenization — all hand-written or vendored, no transitive supply chain.
