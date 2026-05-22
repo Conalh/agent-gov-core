@@ -33,7 +33,7 @@ const finding = createFinding({
 // finding.fingerprint === '<stable 16-char hex>'
 ```
 
-`createFinding` calls `kind()` to build the namespaced kind, validates the slug shape, and computes a stable `fingerprintFinding(finding)` hash of `(kind, file, line, column)`.
+`createFinding` calls `kind()` to build the namespaced kind, validates the slug shape, and computes a stable `fingerprintFinding(finding)` hash of `(kind, file, line, column, salientKey?)`. Pass `salientKey` when two distinct findings can legitimately fire at the same `(kind, file, line)` site (e.g. two suspicious imports on one line) so the meta-reviewer doesn't collapse them into one.
 
 ### Validate findings from disk
 
@@ -83,7 +83,12 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `lineOfTomlKey(text, dottedKey, scope?)` — 1-based line of a TOML key, optionally scoped to a byte range. Use scope to disambiguate `[[array]]`-of-tables entries that share the same leaf key.
 
 ### MCP command normalization
-- `normalizeMcpCommand({ command, args, url, env, cwd })` — canonical identity string for an MCP server entry. Drops neutral confirm flags (`-y`, `--yes`), strips Windows executable suffixes (`.cmd`, `.exe`, `.bat`, `.ps1`), sorts non-neutral flags alphabetically, preserves positional argument order, and includes env + cwd in the identity. Used to dedupe `mcp_command_mismatch` false positives when servers are equivalent but syntactically different (`npx -y foo@1.2.3` vs `npx foo@1.2.3`). Does not interpret what npx/uvx invocations resolve to at runtime — that's outside the substrate's scope.
+- `normalizeMcpCommand({ command, args, url, env, cwd })` — canonical identity string for an MCP server entry. Used to dedupe `mcp_command_mismatch` false positives when servers are equivalent but syntactically different across machines / config files. Does not interpret what npx/uvx invocations resolve to at runtime — that's outside the substrate's scope.
+  - Drops neutral confirm flags (`-y`, `--yes`) so `npx -y foo` and `npx foo` collapse to the same identity.
+  - Strips Windows executable suffixes (`.cmd`, `.exe`, `.bat`, `.ps1`) and case-folds Windows-shaped paths — `NPX.CMD`, `npx.cmd`, and `npx` are all the same executable on Windows.
+  - For known runtimes (`node`, `npx`, `python`, `bash`, etc.), drops the directory portion of absolute paths so `/usr/bin/node`, `/usr/local/bin/node`, and `node` produce identical identity. Custom scripts at absolute paths keep their full path.
+  - Treats common boolean flags (`--verbose`, `--quiet`, `--debug`, `--help`, `--version`, `--force`, `--dry-run`, `--json`, etc.) as standalone instead of greedily pairing them with the next positional argument.
+  - Sorts non-neutral `--key value` flag pairs alphabetically, preserves positional argument order, includes env + cwd in the identity.
 
 ### Shell tokenization
 - `tokenizeShell(command)` — quote-aware split on `;`, `|`, `&&`, `||` plus trivial obfuscation neutralization (`c""url` → `curl`, `c\\url` → `curl`)

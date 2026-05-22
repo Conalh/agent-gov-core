@@ -59,6 +59,24 @@ If you change one, change the other in the same PR. The test suite has a check (
 
 The `kind` field pattern (`^(scope_trail|policy_mesh|capability_echo|task_bound|session_trail)\.[a-z0-9_]+$`) is hard-coded in three places: the schema, the `kind()` helper in `src/finding.ts`, and the `isNamespacedKind()` regex constant. Adding a sixth tool means updating all three.
 
+## Golden compatibility tests
+
+`test/golden.test.mjs` pins exact `fingerprintFinding` hashes and `normalizeMcpCommand` canonical strings for canonical inputs. These are not regular regression tests — they're **contract checks**.
+
+If you change any of:
+- `fingerprintFinding` (the hash algorithm, the fields included, the field order)
+- `normalizeMcpCommand` (the canonical-string format, `normalizeExecutable`, `canonicalizeArgs`, env/cwd handling)
+- `schemas/finding.schema.json` in a way that affects what consumers serialize
+
+…and these tests break, you have just broken dedupe continuity or identity stability for every existing consumer.
+
+The fix is **not** to update the golden values to match your change. The fix is one of:
+1. Revert the change, OR
+2. Make the change additive (e.g. only include a new field in the hash when it's set — see the `salientKey` precedent in v0.4.4), OR
+3. Coordinate a major version bump with a CHANGELOG migration entry and a planned relock across all five consumers.
+
+After v1.0, breaking a golden requires a major bump. Before v1.0, it requires a minor bump with explicit `BREAKING:` in the changelog entry.
+
 ## Releasing
 
 1. Bump `package.json` `"version"`.
