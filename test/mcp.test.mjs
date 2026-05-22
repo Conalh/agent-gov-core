@@ -65,3 +65,15 @@ test('--key=value treated same as --key value', () => {
   const b = normalizeMcpCommand({ command: 'x', args: ['--foo', 'bar'] });
   assert.equal(a, b);
 });
+
+test('npx -y <pkg> normalizes the same as npx <pkg> (neutral confirm flag)', () => {
+  // Regression: PolicyMesh's mcp_command_mismatch false-positive class.
+  // `-y` / `--yes` on npx only suppresses the install prompt — it doesn't
+  // change what runs. Two surfaces should not be flagged as mismatched
+  // just because one omits the confirm flag.
+  const withYes = normalizeMcpCommand({ command: 'npx', args: ['-y', 'foo@1.2.3'] });
+  const withoutYes = normalizeMcpCommand({ command: 'npx', args: ['foo@1.2.3'] });
+  const withLongYes = normalizeMcpCommand({ command: 'npx', args: ['--yes', 'foo@1.2.3'] });
+  assert.equal(withYes, withoutYes);
+  assert.equal(withLongYes, withoutYes);
+});

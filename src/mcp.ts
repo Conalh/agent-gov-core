@@ -61,6 +61,15 @@ function normalizePath(p: string): string {
 }
 
 /**
+ * Boolean flags that don't change *what* runs, just confirmation/verbosity.
+ * Dropped before canonicalization so e.g. `npx -y foo@1.2.3` and `npx foo@1.2.3`
+ * normalize identically. Keep this list conservative — only flags whose presence
+ * vs. absence is provably neutral across the runners that show up in MCP configs
+ * (npx, uvx, pipx, node).
+ */
+const NEUTRAL_BOOLEAN_FLAGS = new Set(['-y', '--yes']);
+
+/**
  * Sort *neutral* flag/value pairs so reordering doesn't change identity, but
  * preserve the order of positional arguments (which are usually load-bearing —
  * e.g. `npx <package> <subcommand>`).
@@ -68,14 +77,18 @@ function normalizePath(p: string): string {
  * Heuristic: an argument starting with `-` is a flag. A flag followed by a
  * non-flag is treated as `--flag value` and the pair is sorted together. We
  * keep them in two buckets: positional (order-preserved) and flag-pairs (sorted).
+ *
+ * Neutral boolean flags (see NEUTRAL_BOOLEAN_FLAGS) are dropped entirely so they
+ * never absorb a trailing positional as a fake `--flag value` pair.
  */
 function canonicalizeArgs(args: readonly string[]): string[] {
+  const filtered = args.filter((a) => !NEUTRAL_BOOLEAN_FLAGS.has(a));
   const positional: string[] = [];
   const flagPairs: Array<[string, string | null]> = [];
 
   let sawFlag = false;
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i]!;
+  for (let i = 0; i < filtered.length; i++) {
+    const a = filtered[i]!;
     if (a.startsWith('-')) {
       sawFlag = true;
       // `--key=value`
@@ -84,7 +97,7 @@ function canonicalizeArgs(args: readonly string[]): string[] {
         flagPairs.push([a.slice(0, eq), a.slice(eq + 1)]);
         continue;
       }
-      const next = args[i + 1];
+      const next = filtered[i + 1];
       if (next !== undefined && !next.startsWith('-')) {
         flagPairs.push([a, next]);
         i++;
