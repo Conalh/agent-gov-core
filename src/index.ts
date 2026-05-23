@@ -41,7 +41,7 @@ export type {
   InvalidFinding,
   MergedReport,
 } from './merge.js';
-export { mergeFindings } from './merge.js';
+export { mergeFindings, validateMergedReport } from './merge.js';
 
 export type { SecretMatch, MatchSecretOptions } from './secrets.js';
 export { matchSecret, SECRET_PATTERNS } from './secrets.js';

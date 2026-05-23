@@ -15,6 +15,13 @@ export interface MergeOptions {
    * to keep the first report's finding instead. Default: `'highest_severity'`.
    */
   duplicatePolicy?: 'highest_severity' | 'first';
+  /**
+   * Optional workflow identifier propagated onto the resulting `MergedReport`.
+   * Cross-walks to OpenTelemetry's `gen_ai.workflow.name` so a meta-reviewer
+   * rolling up N tool reports for one workflow run can carry the same string
+   * downstream tracing already uses. See `docs/INTEROP-OTEL.md`.
+   */
+  workflowName?: string;
 }
 
 export interface MergeSource {
@@ -59,6 +66,12 @@ export interface MergedReport {
    * mixing.
    */
   conversationId?: string;
+  /**
+   * Workflow identifier supplied by the meta-reviewer caller. Cross-walks to
+   * OpenTelemetry's `gen_ai.workflow.name`. Set only when explicitly passed
+   * via `MergeOptions.workflowName` — never inferred.
+   */
+  workflowName?: string;
   /** Deduped findings, sorted by severity (highest first). */
   findings: Finding[];
   /** Count of findings dropped because their severity was below `threshold`. */
@@ -210,7 +223,111 @@ export function mergeFindings(reports: readonly unknown[], opts: MergeOptions = 
     severityCounts,
   };
   if (allSame) merged.conversationId = conversationIds[0];
+  if (opts.workflowName !== undefined) merged.workflowName = opts.workflowName;
   return merged;
+}
+
+const MERGED_REPORT_ALLOWED_KEYS = new Set([
+  'schemaVersion',
+  'sources',
+  'rating',
+  'conversationId',
+  'workflowName',
+  'findings',
+  'droppedBelowThreshold',
+  'duplicateCollapsed',
+  'invalidReports',
+  'invalidFindings',
+  'severityCounts',
+]);
+
+const MERGED_RATING_VALUES = new Set(['none', ...SEVERITIES]);
+
+/**
+ * Runtime check that a value conforms to the {@link MergedReport} envelope.
+ * Mirrors {@link validateReport} but for the merge layer's output. Does NOT
+ * recurse into individual findings — `mergeFindings` has already validated
+ * them and routed invalid ones to `invalidFindings`. The contract here is
+ * envelope structure plus the merge-specific counter and provenance fields.
+ *
+ * @example
+ * import { mergeFindings, validateMergedReport } from 'agent-gov-core';
+ * const merged = mergeFindings(reports, { workflowName: 'pr-1234-review' });
+ * const check = validateMergedReport(merged);
+ * if (!check.ok) throw new Error(check.errors.join('; '));
+ */
+export function validateMergedReport(value: unknown): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, errors: ['merged report must be a plain object'] };
+  }
+  const v = value as Record<string, unknown>;
+  if (v.schemaVersion !== REPORT_SCHEMA_VERSION) {
+    errors.push(`schemaVersion must be '${REPORT_SCHEMA_VERSION}'`);
+  }
+  if (typeof v.rating !== 'string' || !MERGED_RATING_VALUES.has(v.rating)) {
+    errors.push(`rating must be one of: none, ${SEVERITIES.join(', ')}`);
+  }
+  if (!Array.isArray(v.sources)) {
+    errors.push('sources must be an array');
+  } else {
+    for (let i = 0; i < v.sources.length; i++) {
+      const s = v.sources[i];
+      if (s === null || typeof s !== 'object' || Array.isArray(s)) {
+        errors.push(`sources[${i}] must be a plain object`);
+        continue;
+      }
+      const src = s as Record<string, unknown>;
+      if (!isToolKind(src.tool)) {
+        errors.push(`sources[${i}].tool must be one of: ${TOOL_KINDS.join(', ')}`);
+      }
+      if (typeof src.findingCount !== 'number' || !Number.isInteger(src.findingCount) || src.findingCount < 0) {
+        errors.push(`sources[${i}].findingCount must be a non-negative integer`);
+      }
+      if (typeof src.rating !== 'string' || !MERGED_RATING_VALUES.has(src.rating)) {
+        errors.push(`sources[${i}].rating must be one of: none, ${SEVERITIES.join(', ')}`);
+      }
+      if (src.toolVersion !== undefined && typeof src.toolVersion !== 'string') {
+        errors.push(`sources[${i}].toolVersion must be a string when present`);
+      }
+      if (src.conversationId !== undefined && typeof src.conversationId !== 'string') {
+        errors.push(`sources[${i}].conversationId must be a string when present`);
+      }
+    }
+  }
+  if (!Array.isArray(v.findings)) {
+    errors.push('findings must be an array');
+  }
+  for (const counter of ['droppedBelowThreshold', 'duplicateCollapsed'] as const) {
+    const n = v[counter];
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) {
+      errors.push(`${counter} must be a non-negative integer`);
+    }
+  }
+  if (!Array.isArray(v.invalidReports)) errors.push('invalidReports must be an array');
+  if (!Array.isArray(v.invalidFindings)) errors.push('invalidFindings must be an array');
+  const counts = v.severityCounts;
+  if (counts === null || typeof counts !== 'object' || Array.isArray(counts)) {
+    errors.push('severityCounts must be a plain object');
+  } else {
+    const c = counts as Record<string, unknown>;
+    for (const sev of SEVERITIES) {
+      const n = c[sev];
+      if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) {
+        errors.push(`severityCounts.${sev} must be a non-negative integer`);
+      }
+    }
+  }
+  if (v.conversationId !== undefined && typeof v.conversationId !== 'string') {
+    errors.push('conversationId must be a string when present');
+  }
+  if (v.workflowName !== undefined && typeof v.workflowName !== 'string') {
+    errors.push('workflowName must be a string when present');
+  }
+  for (const key of Object.keys(v)) {
+    if (!MERGED_REPORT_ALLOWED_KEYS.has(key)) errors.push(`unknown property: ${key}`);
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 function candidateTool(value: unknown): ToolKind | undefined {

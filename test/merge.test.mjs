@@ -4,6 +4,7 @@ import {
   createFinding,
   createReport,
   mergeFindings,
+  validateMergedReport,
 } from '../dist/index.js';
 
 const finding = (tool, name, severity, location, salientKey) =>
@@ -246,4 +247,74 @@ test('mergeFindings: sources carries provenance for each input report', () => {
   assert.equal(out.sources[0].toolVersion, '0.1.18');
   assert.equal(out.sources[1].tool, 'policy_mesh');
   assert.equal(out.sources[1].toolVersion, '0.1.0');
+});
+
+test('mergeFindings: workflowName round-trips when passed via opts', () => {
+  // Cross-walks OpenTelemetry gen_ai.workflow.name — opt-in only, never inferred.
+  const a = createReport({ tool: 'scope_trail', findings: [] });
+  const out = mergeFindings([a], { workflowName: 'pr-1234-review' });
+  assert.equal(out.workflowName, 'pr-1234-review');
+});
+
+test('mergeFindings: workflowName is omitted when not supplied', () => {
+  // Never inferred from sources — the meta-reviewer caller owns it.
+  const a = createReport({ tool: 'scope_trail', findings: [] });
+  const out = mergeFindings([a]);
+  assert.equal(out.workflowName, undefined);
+  assert.equal('workflowName' in out, false);
+});
+
+test('validateMergedReport: accepts a freshly produced MergedReport', () => {
+  const a = createReport({
+    tool: 'scope_trail',
+    findings: [createFinding({
+      tool: 'scope_trail',
+      name: 'permission_allow_widened',
+      severity: 'high',
+      message: 'x',
+      location: { file: '.claude/settings.json', line: 12 },
+    })],
+  });
+  const out = mergeFindings([a], { workflowName: 'pr-1' });
+  const check = validateMergedReport(out);
+  assert.equal(check.ok, true, check.errors.join('; '));
+});
+
+test('validateMergedReport: rejects non-objects, wrong schemaVersion, bad rating', () => {
+  assert.equal(validateMergedReport(null).ok, false);
+  assert.equal(validateMergedReport([]).ok, false);
+  assert.equal(validateMergedReport('nope').ok, false);
+
+  const base = mergeFindings([]);
+  const bad1 = { ...base, schemaVersion: '0.9' };
+  const r1 = validateMergedReport(bad1);
+  assert.equal(r1.ok, false);
+  assert.ok(r1.errors.some((e) => /schemaVersion/.test(e)));
+
+  const bad2 = { ...base, rating: 'severe' };
+  const r2 = validateMergedReport(bad2);
+  assert.equal(r2.ok, false);
+  assert.ok(r2.errors.some((e) => /rating/.test(e)));
+});
+
+test('validateMergedReport: rejects missing counters and unknown properties', () => {
+  const base = mergeFindings([]);
+  const noCounter = { ...base };
+  delete noCounter.droppedBelowThreshold;
+  const r1 = validateMergedReport(noCounter);
+  assert.equal(r1.ok, false);
+  assert.ok(r1.errors.some((e) => /droppedBelowThreshold/.test(e)));
+
+  const extra = { ...base, somethingExtra: 1 };
+  const r2 = validateMergedReport(extra);
+  assert.equal(r2.ok, false);
+  assert.ok(r2.errors.some((e) => /unknown property/.test(e)));
+});
+
+test('validateMergedReport: rejects non-string workflowName', () => {
+  const base = mergeFindings([]);
+  const bad = { ...base, workflowName: 42 };
+  const r = validateMergedReport(bad);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => /workflowName/.test(e)));
 });

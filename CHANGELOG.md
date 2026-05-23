@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Under v1.0, minor versions may include breaking changes — see [CONTRIBUTING.md](./CONTRIBUTING.md#backwards-compatibility) for the rules.
 
+## [0.8.0] — 2026-05-22
+
+Anchor release for the cross-tool meta-reviewer. Additive minor bump — one new optional field, one new validator. No breaking changes; all 0.7.x consumers continue to work unchanged.
+
+### Added
+- `MergedReport.workflowName` (optional) — populated when `mergeFindings(reports, { workflowName })` is called. Cross-walks to OpenTelemetry's [`gen_ai.workflow.name`](./docs/INTEROP-OTEL.md) semantic convention so a meta-reviewer rolling up N tool reports for one workflow run can carry the same string downstream observability already uses. Never inferred — the meta-reviewer caller owns it.
+- `MergeOptions.workflowName?: string` — opts-in entry point for the field above.
+- `validateMergedReport(value)` — strict envelope check for `MergedReport`. Mirrors `validateReport` on the source side so a meta-reviewer that round-trips merged output through JSON can verify it the same way.
+
+### Tests
+- 236 total, up from 230. 6 new cases: workflowName round-trip, workflowName omission default, validateMergedReport happy path, validateMergedReport structural/rating rejection, validateMergedReport counter/unknown-property rejection, validateMergedReport workflowName type rejection.
+
 ## [0.7.1] — 2026-05-22
 
 Contract-hardening patch. Two external inspection rounds (Gemini + Cody) surfaced five P0/P1 contract bugs in shipped code and one packaging fix. All addressed here. No new features; no new public exports.

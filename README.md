@@ -106,7 +106,8 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `createReport({tool, findings, ...})` — sets `schemaVersion` and derives `rating` from max finding severity
 - `maxSeverity(findings)` — returns `'none' | Severity`, used by `createReport`
 - `validateReport(value)` — strict envelope check including each finding; returns `{ ok, errors[] }`
-- `mergeFindings(reports, opts?)` — combine N tool reports, dedupe by fingerprint, apply threshold, roll up rating; preserves both invalid envelopes and invalid findings separately so nothing is silently dropped. Propagates `conversationId` to the merged report iff every source agrees on it.
+- `mergeFindings(reports, opts?)` — combine N tool reports, dedupe by fingerprint, apply threshold, roll up rating; preserves both invalid envelopes and invalid findings separately so nothing is silently dropped. Propagates `conversationId` to the merged report iff every source agrees on it. Optional `opts.workflowName` is round-tripped onto `MergedReport.workflowName` — cross-walks to OpenTelemetry's `gen_ai.workflow.name` (see [`docs/INTEROP-OTEL.md`](./docs/INTEROP-OTEL.md)).
+- `validateMergedReport(value)` — strict envelope check for the merge layer's output (mirrors `validateReport` for the source side). Used by a meta-reviewer that needs to round-trip merged reports through JSON.
 
 ### Config readers
 - `readJsonObjectWithSource(path)` — JSONC reader, string-aware comment + trailing-comma stripping, position-preserving. Returns `{ value, json, text, parseError? }`. When the underlying parser provides a byte offset, `parseError` is a `ConfigParseError` carrying `line`/`column`/`rawOffset` instead of a raw `Error`.
