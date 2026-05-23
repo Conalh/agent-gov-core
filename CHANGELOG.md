@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Under v1.0, minor versions may include breaking changes — see [CONTRIBUTING.md](./CONTRIBUTING.md#backwards-compatibility) for the rules.
 
+## [0.8.1] — 2026-05-22
+
+ReDoS audit patch. Zero source changes — every regex evaluator in `src/secrets.ts`, `src/shell.ts`, `src/locators.ts`, and `src/mcp.ts` was already safe by construction (no nested quantifiers over overlapping character classes; disjoint alternation; anchored where applicable). Ships durable verification + threat-model documentation so future contributors don't have to re-derive the analysis.
+
+### Added
+- [`docs/SECURITY.md`](./docs/SECURITY.md) — threat model for regex evaluation on untrusted input, plus what we don't protect against (the `dottedKey` argument to `lineOfTomlKey` is treated as developer-supplied; the SessionTrail-class user-supplied-pattern vector does not apply because the library never accepts a pattern from a caller). Bundled in the published tarball via the existing `files: ["docs"]` entry.
+- [`test/redos.test.mjs`](./test/redos.test.mjs) — adversarial harness. 18 tests, each exercising one regex evaluator against ~100 KB of input shaped to trigger the worst backtracking path the pattern could exhibit (long benign, long near-miss, nested-quantifier-style). Each call must complete under a 50 ms wall-clock budget. Current worst case is the `bash -c` payload extractor at <10 ms — three orders of magnitude clear of catastrophic backtracking.
+
+### Tests
+- 254 total, up from 236. 18 new ReDoS pinning tests covering every regex evaluator in the four audited files.
+
 ## [0.8.0] — 2026-05-22
 
 Anchor release for the cross-tool meta-reviewer. Additive minor bump — one new optional field, one new validator. No breaking changes; all 0.7.x consumers continue to work unchanged.
