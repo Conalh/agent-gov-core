@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). **As of v1.0.0, the contract is frozen** — breaking changes require a major bump and a migration path documented in this changelog.
 
+## [1.1.0] — 2026-05-23
+
+**Transcript-event types + JSONL parsers.** Additive on top of v1.0.0 — no existing surface changes, no breaking moves.
+
+### Added
+
+The substrate now hosts the parser surface that AgentPulse v0.1–v0.4 and SessionTrail had each been vendoring separately. One source of truth, downstream tools stop drifting out of sync.
+
+- **`TranscriptEvent`** + **`EventKind`** + **`Runtime`** + **`ParseOptions`** types — the canonical shape for any normalized event read off a Claude Code, Cursor, or Codex JSONL transcript. Live in `src/transcript-events.ts`.
+- **`parseTranscriptDir(transcriptDir, opts?)`** — top-level entry point. Walks a directory recursively, picks up `.jsonl` files, parses each line, interpolates missing timestamps, filters by `since` / `until` if supplied, returns a chronologically sorted `TranscriptEvent[]`. Malformed lines are counted and reported via a single aggregate `console.warn` (suppressible with `opts.silent: true` for TUI consumers).
+- **Per-runtime parsers** for callers that already hold a parsed line:
+  - `parseAnthropicLine(parsed, forcedRuntime?)` — Claude Code / Cursor envelope, handles `tool_use` + `tool_result` blocks, exit-code extraction
+  - `parseCodexLine(parsed)` — Codex `response_item` + `session_meta`, handles `function_call` / `function_call_output` / `local_shell_call_output` / `message` payloads, `apply_patch` non-JSON args
+  - `detectAnthropicRuntime(line)` — distinguishes Claude Code from Cursor based on top-level shape (`sessionId`, `cwd`, `version`, `source`)
+  - `isCodexLine(parsed)` + `isCodexSessionMeta(parsed)` — type guards used during the line-by-line routing in `parseTranscriptDir`
+- **Shared helpers**: `coerceTimestamp`, `extractExitCode`, `extractTextFromBlocks`, `extractToolResultText`, `interpolateTimestamps`, `isRecord` — all stable, all exported.
+
+### Architecture
+
+- New files: `src/transcript-events.ts` (types), `src/parsers/util.ts`, `src/parsers/claude-code.ts`, `src/parsers/codex.ts`, `src/parsers/parse-transcript-dir.ts`, `src/parsers/index.ts` (barrel).
+- `src/index.ts` gained one new `export type {}` block + one new `export {}` block. No existing exports moved, renamed, or changed.
+- Aggregate warning message changed from AgentPulse's `[agentpulse:parser]` prefix to `[transcript-parser]` — brand-neutral, since multiple tools now share the surface.
+
+### Tests
+
+265 (was 259). Six new tests in `test/parsers.test.mjs` covering:
+- Claude Code roundtrip (user / tool_use / tool_result chain with exit-code extraction)
+- Cursor (missing timestamps tolerated, interpolation safely no-ops)
+- Codex (`response_item` shapes, `session_meta` emits system event, `apply_patch` falls back to `.patch`, JSON `shell` args parsed normally)
+- `since` / `until` window filtering drops timestamp-0 events when a window is supplied
+- Malformed lines are skipped without throwing; surrounding good lines still parse
+- Subdirectory walk merges results chronologically across runtimes
+
+Fixture files (`fixtures-parsers-claude-code.jsonl`, `fixtures-parsers-codex.jsonl`, `fixtures-parsers-cursor.jsonl`) live alongside the test files following the flat-layout convention used by the rest of the suite.
+
+### Migration for downstream tools
+
+- **AgentPulse v0.5+** will import the surface from agent-gov-core; the local `src/parser.ts` + `src/parsers/` shrink to a thin re-export and eventually delete.
+- **SessionTrail v1.0+** can adopt the same way — drop its vendored `src/transcript.ts` body, re-export from `agent-gov-core`, ship.
+- **New consumers** should import `parseTranscriptDir` + `TranscriptEvent` from `agent-gov-core` directly.
+
+The v1.0.0 contract surface stays exactly as documented — every existing export, schema, and hash format is unchanged.
+
 ## [1.0.0] — 2026-05-23
 
 **Semver freeze.** No source changes vs. v0.8.1 — this release marks the contract as stable. Everything pinned by the golden tests (`fingerprintFinding` hash shape, `normalizeMcpCommand` canonical string format, the `Finding`, `Report`, and `MergedReport` schemas) is now under semver: breaking changes will require a 2.0.0.

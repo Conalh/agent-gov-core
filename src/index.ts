@@ -69,3 +69,30 @@ export {
   emitFindingAnnotation,
   generateWorkflowSummary,
 } from './action.js';
+
+// v1.1.0 — transcript-event types + JSONL parsers (Claude Code, Cursor,
+// Codex). Promoted out of vendored copies in AgentPulse v0.1–v0.4 and
+// SessionTrail so every suite tool shares one parser surface.
+export type {
+  EventKind,
+  ParseOptions,
+  Runtime,
+  TranscriptEvent,
+} from './transcript-events.js';
+export {
+  // Top-level entry point.
+  parseTranscriptDir,
+  // Per-runtime parsers (exposed for callers that already hold a parsed line).
+  detectAnthropicRuntime,
+  parseAnthropicLine,
+  isCodexLine,
+  isCodexSessionMeta,
+  parseCodexLine,
+  // Helpers shared across runtimes.
+  coerceTimestamp,
+  extractExitCode,
+  extractTextFromBlocks,
+  extractToolResultText,
+  interpolateTimestamps,
+  isRecord,
+} from './parsers/index.js';
