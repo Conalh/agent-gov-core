@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Under v1.0, minor versions may include breaking changes — see [CONTRIBUTING.md](./CONTRIBUTING.md#backwards-compatibility) for the rules.
 
+## [0.7.1] — 2026-05-22
+
+Contract-hardening patch. Two external inspection rounds (Gemini + Cody) surfaced five P0/P1 contract bugs in shipped code and one packaging fix. All addressed here. No new features; no new public exports.
+
+### Fixed (correctness)
+
+- **`applyExceptions` is now order-independent.** Previously the FIRST matching rule won — a stale expired rule listed before a broader active rule would incorrectly surface the finding as expired instead of being suppressed by the active rule. Now ALL matching rules are collected; the finding is suppressed when any matching rule is active, and only re-surfaces (with downgrade) when every matching rule has expired.
+- **`mergeFindings` rejects tool/finding mismatches.** Previously a forged `scope_trail` report containing `policy_mesh.*` findings would merge silently with wrong provenance. `validateReport` already rejected this; the merge path was more permissive. Now mismatches land in `invalidFindings[]` while the rest of the report still passes through.
+- **`normalizeMcpCommand` no longer collides on whitespace/delimiter args.** `['a b']` and `['a', 'b']` previously produced the same canonical `args=a b` because of space-joining. Same shape for env: `{A:'1|B=2'}` and `{A:'1', B:'2'}` collided under pipe-joining. Both now use JSON encoding so distinct inputs produce distinct canonicals. **This changes the canonical-string format**; PolicyMesh's `mcp_command_mismatch` will now correctly detect previously-conflated MCP configs.
+- **`createReport` clamps a downward-rating override upward to the implied max.** Previously `createReport({rating: 'low', findings: [critical-finding]})` returned a report that `validateReport` would then reject — the constructor and validator disagreed. Now createReport's output always round-trips through validateReport. Upward overrides (rating > implied) are still honored.
+- **`applyExceptions` pathPrefix now normalizes Windows backslashes and requires segment boundaries.** A finding with `src\app.ts` (Windows) now matches a `src/` prefix; a prefix `src/app` no longer over-suppresses `src/application.ts` (the match must land on a `/` boundary or be the exact path).
+
+### Changed (visible to consumers)
+
+- **MCP canonical-string format**: `args` and `env` now serialize as JSON. Existing PolicyMesh test fixtures may need updates if they pin the exact canonical (most don't — they pin server-identity-equivalence). Golden tests in `test/golden.test.mjs` updated to the new format.
+
+### Packaging
+- `docs/` directory is now included in the npm tarball. The README's link to `docs/INTEROP-OTEL.md` no longer 404s on the npm landing page.
+
+### Cleanup
+- `candidateTool` in `merge.ts` now delegates to `isToolKind` from `finding.ts` instead of carrying a hardcoded tool-list regex. Removes the fourth lockstep duplication of the ToolKind enum.
+
+### Tests
+- 230 total, up from 220. 10 new regression cases: order-independent exception application, all-expired downgrade chain, Windows-backslash path normalization, segment-aware prefix boundary, mergeFindings tool-mismatch rejection, MCP args whitespace collision, MCP env delimiter collision, MCP env order-independence under JSON encoding, createReport rating clamp, createReport round-trip-validates contract.
+
+### Skipped vs Cursor inspection
+- Gemini #3 (secret-pattern boundary anchors): proposed fix didn't actually fix the example given (`my-transaction-id-AIza<35>` has `-` as boundary character, so a boundary anchor still allows the match). Held for further design.
+- Gemini #4 (hex token vs `GITHUB_SHA`): operationally rare given current consumer scanning paths; document-only follow-up.
+- Cursor's README/package.json description / CONTRIBUTING module list refresh: pending follow-up doc PR.
+
 ## [0.7.0] — 2026-05-22
 
 **The pre-v1.0 consolidation release.** Bundles everything that was queued for v0.6.0 (report envelope + merge layer + OTel GenAI interop) plus two universal detectors promoted from consumer repos: `matchSecret` (from PolicyMesh) and `applyExceptions` (unifying PolicyMesh's `subject` and TaskBound's `allow_paths` shapes).

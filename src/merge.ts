@@ -144,6 +144,23 @@ export function mergeFindings(reports: readonly unknown[], opts: MergeOptions = 
         continue;
       }
 
+      // Cross-check: a finding's tool must match the envelope's tool. Otherwise
+      // the merge would attribute a foreign-tool finding to this report's
+      // source provenance, breaking the meta-reviewer's audit trail.
+      // validateReport enforces this strictly; the merge path was previously
+      // more permissive — which let a forged report through.
+      if (finding.tool !== report.tool) {
+        invalidFindings.push({
+          reportIndex: i,
+          findingIndex: j,
+          tool: report.tool,
+          errors: [
+            `finding.tool '${finding.tool}' does not match report.tool '${report.tool}'`,
+          ],
+        });
+        continue;
+      }
+
       if (rankSeverity(finding.severity) < thresholdRank) {
         droppedBelowThreshold++;
         continue;
@@ -199,9 +216,10 @@ export function mergeFindings(reports: readonly unknown[], opts: MergeOptions = 
 function candidateTool(value: unknown): ToolKind | undefined {
   if (value === null || typeof value !== 'object') return undefined;
   const t = (value as { tool?: unknown }).tool;
-  return typeof t === 'string' && /^(scope_trail|policy_mesh|capability_echo|task_bound|session_trail)$/.test(t)
-    ? (t as ToolKind)
-    : undefined;
+  // Defer to isToolKind from finding.ts — the single source of truth for the
+  // ToolKind enum. Avoids a hardcoded regex drifting from the TS union, the
+  // schema, and TOOL_KINDS.
+  return isToolKind(t) ? t : undefined;
 }
 
 /**

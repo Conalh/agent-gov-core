@@ -41,17 +41,22 @@ export function normalizeMcpCommand(spec: McpCommandSpec): string {
   }
 
   const args = spec.args ?? [];
-  parts.push(`args=${canonicalizeArgs(args).join(' ')}`);
+  // JSON-encode the canonicalized args so a token containing whitespace
+  // (`['a b']`) doesn't collide with two tokens (`['a', 'b']`). Both would
+  // previously serialize to `args=a b` and PolicyMesh would treat genuinely
+  // different MCP commands as the same server.
+  parts.push(`args=${JSON.stringify(canonicalizeArgs(args))}`);
 
   if (spec.cwd) {
     parts.push(`cwd=${normalizePath(spec.cwd)}`);
   }
 
   if (spec.env) {
-    const env = Object.entries(spec.env)
-      .map(([k, v]) => `${k}=${v}`)
-      .sort();
-    parts.push(`env=${env.join('|')}`);
+    // JSON-encode sorted (key, value) pairs so a value containing `|` or `=`
+    // (`{A: '1|B=2'}`) doesn't collide with multiple entries (`{A: '1', B: '2'}`).
+    // Sorted by key for order-independence.
+    const env = Object.entries(spec.env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    parts.push(`env=${JSON.stringify(env)}`);
   }
 
   return parts.join('\n');

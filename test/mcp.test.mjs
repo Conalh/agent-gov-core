@@ -112,6 +112,31 @@ test('--key=value treated same as --key value', () => {
   assert.equal(a, b);
 });
 
+test('args containing whitespace do NOT collide with two-arg case (P0 regression)', () => {
+  // Cody-caught: args.join(' ') made `['a b']` and `['a', 'b']` produce the
+  // SAME canonical, defeating PolicyMesh's mcp_command_mismatch dedup. JSON
+  // encoding gives the args list an unambiguous shape.
+  const oneArg = normalizeMcpCommand({ command: 'node', args: ['a b'] });
+  const twoArgs = normalizeMcpCommand({ command: 'node', args: ['a', 'b'] });
+  assert.notEqual(oneArg, twoArgs);
+});
+
+test('env values containing delimiters do NOT collide with multiple keys (P0 regression)', () => {
+  // Cody-caught: env serialization `${k}=${v}` joined by `|` made a value
+  // containing `|B=2` collide with a second env entry `B=2`. JSON encoding
+  // of the [key, value] pair array fixes this.
+  const oneEntry = normalizeMcpCommand({ command: 'x', env: { A: '1|B=2' } });
+  const twoEntries = normalizeMcpCommand({ command: 'x', env: { A: '1', B: '2' } });
+  assert.notEqual(oneEntry, twoEntries);
+});
+
+test('env order independence still holds with JSON encoding', () => {
+  // Sanity for the encoding change: sorted-by-key behavior remains in place.
+  const a = normalizeMcpCommand({ command: 'x', env: { A: '1', B: '2' } });
+  const b = normalizeMcpCommand({ command: 'x', env: { B: '2', A: '1' } });
+  assert.equal(a, b);
+});
+
 test('known-boolean flags do not greedily eat the next positional (regression)', () => {
   // Inspection: --verbose followed by a non-flag was paired into --verbose=pkg,
   // so reordering `--host localhost --verbose pkg` vs `--verbose --host localhost pkg`

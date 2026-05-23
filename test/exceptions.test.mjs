@@ -127,6 +127,92 @@ test('applyExceptions: malformed expires date is treated as never-expires', () =
   assert.equal(result.suppressed, 1);
 });
 
+test('applyExceptions: active rule wins over expired rule regardless of order (P0 regression)', () => {
+  // Gemini-caught contract bug: previously the FIRST matching rule won. If a
+  // stale specific rule was listed before a broader active rule, the finding
+  // surfaced as expired instead of being suppressed by the active rule.
+  const finding = createFinding({
+    tool: 'task_bound',
+    name: 'out_of_scope_file',
+    severity: 'medium',
+    message: 'x',
+    location: { file: 'src/config/db.ts', line: 1 },
+  });
+  const now = new Date('2026-05-22');
+  // Order A: expired specific first, active broader second
+  const a = applyExceptions([finding], [
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/config/', expires: '2026-01-01' },
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/' },
+  ], now);
+  // Order B: reversed
+  const b = applyExceptions([finding], [
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/' },
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/config/', expires: '2026-01-01' },
+  ], now);
+  assert.equal(a.suppressed, 1, 'active rule must suppress regardless of position');
+  assert.equal(a.expired, 0);
+  assert.deepEqual(
+    { suppressed: a.suppressed, expired: a.expired },
+    { suppressed: b.suppressed, expired: b.expired },
+    'applyExceptions must be order-independent',
+  );
+});
+
+test('applyExceptions: all-expired matching set surfaces with downgrade', () => {
+  // Sanity: when no active rule exists and ALL matches are expired, the
+  // finding does surface — using the first expired rule's reason text.
+  const finding = createFinding({
+    tool: 'task_bound', name: 'out_of_scope_file', severity: 'medium',
+    message: 'x', location: { file: 'src/x.ts', line: 1 },
+  });
+  const now = new Date('2026-05-22');
+  const r = applyExceptions([finding], [
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/', expires: '2025-01-01', reason: 'expired-A' },
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/', expires: '2025-06-01', reason: 'expired-B' },
+  ], now);
+  assert.equal(r.expired, 1);
+  assert.equal(r.findings.length, 1);
+  assert.equal(r.findings[0].data?.exceptionReason, 'expired-A', 'first expired match supplies the reason');
+});
+
+test('applyExceptions: pathPrefix normalizes Windows backslashes (P1 regression)', () => {
+  // Cody-caught: a finding with `src\app.ts` (Windows) wasn't matching a
+  // pathPrefix of `src/` (forward slash). Both sides normalize to `/`.
+  const winFinding = createFinding({
+    tool: 'task_bound', name: 'out_of_scope_file', severity: 'medium',
+    message: 'x', location: { file: 'src\\app.ts', line: 1 },
+  });
+  const r = applyExceptions([winFinding], [
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/' },
+  ]);
+  assert.equal(r.suppressed, 1, 'Windows-style path must match POSIX-style prefix');
+});
+
+test('applyExceptions: pathPrefix requires segment boundary (P1 regression)', () => {
+  // Cody-caught: `pathPrefix: 'src/app'` was suppressing `src/application.ts`
+  // because of raw string-startsWith matching. Prefix matches must land on
+  // a `/` boundary or be the exact full path.
+  const finding = createFinding({
+    tool: 'task_bound', name: 'out_of_scope_file', severity: 'medium',
+    message: 'x', location: { file: 'src/application.ts', line: 1 },
+  });
+  const r = applyExceptions([finding], [
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/app' },
+  ]);
+  assert.equal(r.suppressed, 0, 'pathPrefix src/app must NOT match src/application.ts');
+  assert.equal(r.findings.length, 1);
+
+  // Sanity: same prefix should still match src/app/foo.ts (segment boundary)
+  const innerFinding = createFinding({
+    tool: 'task_bound', name: 'out_of_scope_file', severity: 'medium',
+    message: 'x', location: { file: 'src/app/foo.ts', line: 1 },
+  });
+  const r2 = applyExceptions([innerFinding], [
+    { kind: 'task_bound.out_of_scope_file', pathPrefix: 'src/app' },
+  ]);
+  assert.equal(r2.suppressed, 1, 'pathPrefix src/app must match src/app/foo.ts');
+});
+
 test('applyExceptions: future expires keeps the exception active', () => {
   const future = new Date('2099-01-01').toISOString().slice(0, 10);
   const result = applyExceptions([sampleFinding()], [

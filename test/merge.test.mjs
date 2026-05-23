@@ -203,6 +203,40 @@ test('mergeFindings: conversationId omitted when only some sources have it', () 
   assert.equal(out.conversationId, undefined);
 });
 
+test('mergeFindings: rejects finding whose tool does not match the envelope (P0 regression)', () => {
+  // Cody-caught: validateReport rejected this mismatch but mergeFindings was
+  // more permissive — it accepted the report and merged the foreign-tool
+  // finding under the wrong provenance. Now the mismatch lands in
+  // invalidFindings while the rest of the report still passes through.
+  const mismatched = {
+    schemaVersion: '1.0',
+    tool: 'scope_trail',
+    rating: 'high',
+    findings: [
+      {
+        tool: 'policy_mesh',  // ← foreign tool
+        kind: 'policy_mesh.mcp_command_mismatch',
+        severity: 'high',
+        message: 'forged finding inside a scope_trail report',
+        fingerprint: 'fakefp1234567890',
+      },
+      // A valid scope_trail finding in the same report
+      {
+        tool: 'scope_trail',
+        kind: 'scope_trail.permission_allow_widened',
+        severity: 'medium',
+        message: 'legitimate finding',
+        fingerprint: 'realfp1234567890',
+      },
+    ],
+  };
+  const out = mergeFindings([mismatched]);
+  assert.equal(out.findings.length, 1, 'only the matching-tool finding survives');
+  assert.equal(out.findings[0].tool, 'scope_trail');
+  assert.equal(out.invalidFindings.length, 1);
+  assert.match(out.invalidFindings[0].errors[0], /does not match report\.tool/);
+});
+
 test('mergeFindings: sources carries provenance for each input report', () => {
   const a = createReport({ tool: 'scope_trail', toolVersion: '0.1.18', findings: [] });
   const b = createReport({ tool: 'policy_mesh', toolVersion: '0.1.0', findings: [] });

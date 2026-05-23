@@ -76,10 +76,23 @@ export interface CreateReportSpec {
  * });
  */
 export function createReport(spec: CreateReportSpec): Report {
+  // Rating policy: caller-supplied rating is honored only when it's at or
+  // above the implied max severity. Otherwise it's clamped upward to the
+  // implied max so createReport never returns a report that validateReport
+  // would reject. Upward overrides (rating > implied) are still allowed —
+  // a tool may legitimately escalate by policy.
+  const impliedRating = maxSeverity(spec.findings);
+  const supplied = spec.rating;
+  const rating =
+    supplied === undefined
+      ? impliedRating
+      : severityRank(supplied) >= severityRank(impliedRating)
+        ? supplied
+        : impliedRating;
   const report: Report = {
     schemaVersion: REPORT_SCHEMA_VERSION,
     tool: spec.tool,
-    rating: spec.rating ?? maxSeverity(spec.findings),
+    rating,
     findings: spec.findings,
   };
   if (spec.toolVersion !== undefined) report.toolVersion = spec.toolVersion;

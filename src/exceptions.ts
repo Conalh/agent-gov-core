@@ -91,33 +91,57 @@ export function applyExceptions(
   let expired = 0;
 
   for (const finding of findings) {
-    const match = findMatchingException(finding, exceptions);
-    if (!match) {
+    // Collect ALL matching rules — order independence is required by contract.
+    // A finding is suppressed when any matching rule is active; only when
+    // every matching rule has expired does the finding re-surface as expired.
+    // Previously the first match won, so a stale rule listed before an
+    // active broader rule incorrectly surfaced expired alerts.
+    const matches = findAllMatchingExceptions(finding, exceptions);
+    if (matches.length === 0) {
       result.push(finding);
       continue;
     }
-    if (match.expires && isExpired(match.expires, now)) {
-      result.push(downgradeExpired(finding, match));
-      expired++;
-    } else {
+
+    const activeMatch = matches.find((m) => !m.expires || !isExpired(m.expires, now));
+    if (activeMatch) {
       suppressed++;
+      continue;
     }
+
+    // Every matching rule has expired. Use the first match for reason text.
+    result.push(downgradeExpired(finding, matches[0]!));
+    expired++;
   }
 
   return { findings: result, suppressed, expired };
 }
 
-function findMatchingException(finding: Finding, exceptions: readonly Exception[]): Exception | undefined {
+function findAllMatchingExceptions(finding: Finding, exceptions: readonly Exception[]): Exception[] {
+  const out: Exception[] = [];
   for (const exc of exceptions) {
     if (exc.kind !== finding.kind) continue;
     if (exc.salientKey !== undefined && exc.salientKey !== finding.salientKey) continue;
-    if (exc.pathPrefix !== undefined) {
-      const file = finding.location?.file;
-      if (!file || !file.startsWith(exc.pathPrefix)) continue;
-    }
-    return exc;
+    if (exc.pathPrefix !== undefined && !pathPrefixMatches(finding.location?.file, exc.pathPrefix)) continue;
+    out.push(exc);
   }
-  return undefined;
+  return out;
+}
+
+/**
+ * Segment-aware path-prefix match. Normalizes Windows backslashes to forward
+ * slashes on BOTH sides so a finding's `src\app.ts` matches a `src/` prefix.
+ * Requires the prefix match to land on a segment boundary OR be the exact
+ * full path — so prefix `src/app` does NOT match `src/application.ts`.
+ */
+function pathPrefixMatches(file: string | undefined, prefix: string): boolean {
+  if (!file) return false;
+  const fileNorm = file.replace(/\\/g, '/');
+  const prefixNorm = prefix.replace(/\\/g, '/');
+  if (!fileNorm.startsWith(prefixNorm)) return false;
+  // Exact match, prefix ends with `/`, or next char is `/` — all valid boundaries.
+  if (fileNorm.length === prefixNorm.length) return true;
+  if (prefixNorm.endsWith('/')) return true;
+  return fileNorm[prefixNorm.length] === '/';
 }
 
 function isExpired(expires: string, now: Date): boolean {

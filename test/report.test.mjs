@@ -38,15 +38,42 @@ test('createReport: empty findings rates none', () => {
   assert.equal(r.rating, 'none');
 });
 
-test('createReport: explicit rating overrides derived one', () => {
+test('createReport: explicit rating overrides derived one (upward)', () => {
   const r = createReport({
     tool: 'scope_trail',
     findings: [sampleFinding('low')],
     rating: 'critical',
   });
-  // Overriding upward is allowed; validateReport's consistency check only
-  // catches ratings BELOW the implied max.
+  // Overriding upward is allowed — a tool may legitimately escalate by policy.
   assert.equal(r.rating, 'critical');
+});
+
+test('createReport: downward rating override is clamped upward to implied max (P1 regression)', () => {
+  // Cody-caught: createReport accepted rating='low' even when findings contained
+  // a critical, producing a report that validateReport then rejected. Now the
+  // supplied rating is clamped upward so createReport NEVER returns a report
+  // that validateReport would refuse.
+  const r = createReport({
+    tool: 'capability_echo',
+    findings: [sampleFinding('critical')],
+    rating: 'low',  // ← caller-supplied lie
+  });
+  assert.equal(r.rating, 'critical', 'rating clamped upward to implied max');
+});
+
+test('createReport output always round-trips through validateReport', () => {
+  // Cross-cutting contract: any output of createReport must validate.
+  const cases = [
+    { findings: [], rating: undefined },
+    { findings: [sampleFinding('low')], rating: undefined },
+    { findings: [sampleFinding('critical')], rating: 'low' },  // attempted downgrade
+    { findings: [sampleFinding('low')], rating: 'critical' },  // upward override
+  ];
+  for (const spec of cases) {
+    const r = createReport({ tool: 'scope_trail', ...spec });
+    const v = validateReport(r);
+    assert.equal(v.ok, true, `createReport output must validate; spec=${JSON.stringify(spec)}; errors=${JSON.stringify(v.errors)}`);
+  }
 });
 
 test('createReport: optional fields only present when supplied', () => {
