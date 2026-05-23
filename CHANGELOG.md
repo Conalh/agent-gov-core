@@ -1,6 +1,30 @@
 # Changelog
 
-All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Under v1.0, minor versions may include breaking changes — see [CONTRIBUTING.md](./CONTRIBUTING.md#backwards-compatibility) for the rules.
+All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). **As of v1.0.0, the contract is frozen** — breaking changes require a major bump and a migration path documented in this changelog.
+
+## [1.0.0] — 2026-05-23
+
+**Semver freeze.** No source changes vs. v0.8.1 — this release marks the contract as stable. Everything pinned by the golden tests (`fingerprintFinding` hash shape, `normalizeMcpCommand` canonical string format, the `Finding`, `Report`, and `MergedReport` schemas) is now under semver: breaking changes will require a 2.0.0.
+
+### What's stable as of v1.0.0
+- `Finding` schema + `kind` namespace pattern (`<tool>.<slug>`)
+- `Report` envelope (schemaVersion `'1.0'`, `tool`/`rating`/`findings`/optional `conversationId`/`baseRef`/`headRef`/`data`)
+- `MergedReport` envelope from `mergeFindings` (adds `sources[]`, `workflowName?`, `invalidReports[]`, `invalidFindings[]`)
+- `fingerprintFinding` hash format: 16-char hex of `(kind, file, line, column, salientKey?)` with backslash → forward-slash path normalization
+- `normalizeMcpCommand` canonical string format: JSON-encoded args, JSON-encoded sorted env pairs, known-runtime basename collapse, Windows-shape case folding
+- All other public exports: `createFinding`, `createReport`, `validateFinding`, `validateReport`, `validateMergedReport`, `mergeFindings`, `applyExceptions`, `matchSecret`, `tokenizeShell`, `tokenizeShellDeep`, `getCommandHead`, `lineOfJsonKey`, `lineOfJsonStringValue`, `lineOfTomlKey`, `readJsonObjectWithSource`, `readTomlObject`, `parseToml`, `emitFindingAnnotation`, `generateWorkflowSummary`, `rankSeverity`, `passesSeverityThreshold`, `anyAtOrAbove`, `ConfigParseError`, `lineColumnOfOffset`
+- All schemas under `./schemas/` (`finding.schema.json`, `report.schema.json`)
+
+### Validation
+- All 254 tests pass on v0.8.1 source, including 11 golden compatibility tests pinning the contract surface.
+- Five consumer tools (ScopeTrail, PolicyMesh, CapabilityEcho, TaskBound, SessionTrail) and GovVerdict have now adopted `createReport` + `createFinding` as their exclusive output path. End-to-end smoke: GovVerdict merges five canonical reports → 42 unique findings, cross-tool dedup working, rating critical.
+
+### Stability guarantees post-v1.0
+- Adding new optional fields, exports, or detectors → minor bump (`1.1.0`).
+- Changing the shape of `fingerprintFinding` output, the `normalizeMcpCommand` canonical string, or any schema's `additionalProperties: false` boundary → major bump (`2.0.0`) with documented migration.
+- Internal refactors (renaming non-exported functions, restructuring `dist/`) → patch (`1.0.1`).
+
+The contract has been hardened across 7 external inspection rounds (Gemini ×3, Cody ×2, Cursor ×2) since v0.4.0; every regression caught was either fixed and pinned by a golden, or documented as out-of-scope in `docs/SECURITY.md`.
 
 ## [0.8.1] — 2026-05-22
 
