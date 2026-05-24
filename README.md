@@ -162,6 +162,7 @@ Secondary entry point used by consumer test suites. Zero overhead in production 
 - [CapabilityEcho](https://github.com/Conalh/CapabilityEcho) — capability drift through code, not config (`capability_echo.*`)
 - [TaskBound](https://github.com/Conalh/TaskBound) — scope creep after the agent runs (`task_bound.*`)
 - [SessionTrail](https://github.com/Conalh/SessionTrail) — runtime behavior across agent session transcripts (`session_trail.*`)
+- [GovVerdict](https://github.com/Conalh/GovVerdict) — cross-tool meta-reviewer that rolls suite findings into one verdict; imports `mergeFindings`, `applyExceptions`, `generateWorkflowSummary`, `emitFindingAnnotation`, `anyAtOrAbove`, `validateReport`
 
 ## Contributing
 
