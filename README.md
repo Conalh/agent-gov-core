@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/agent-gov-core)](https://www.npmjs.com/package/agent-gov-core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Shared primitives for the AI-agent governance suite — a small library that ScopeTrail, PolicyMesh, CapabilityEcho, TaskBound, SessionTrail, and the GovVerdict meta-reviewer all consume so common parsers, locators, and the `Finding` schema live in one place instead of six.
+Shared primitives for the AI-agent governance suite — a small library that ScopeTrail, PolicyMesh, CapabilityEcho, TaskBound, SessionTrail, the GovVerdict meta-reviewer, and the AgentPulse live dashboard all consume so common parsers, locators, and the `Finding` schema live in one place instead of seven.
 
 Zero runtime dependencies. ESM, TypeScript, target ES2022.
 
@@ -163,6 +163,7 @@ Secondary entry point used by consumer test suites. Zero overhead in production 
 - [TaskBound](https://github.com/Conalh/TaskBound) — scope creep after the agent runs (`task_bound.*`)
 - [SessionTrail](https://github.com/Conalh/SessionTrail) — runtime behavior across agent session transcripts (`session_trail.*`)
 - [GovVerdict](https://github.com/Conalh/GovVerdict) — cross-tool meta-reviewer that rolls suite findings into one verdict; imports `mergeFindings`, `applyExceptions`, `generateWorkflowSummary`, `emitFindingAnnotation`, `anyAtOrAbove`, `validateReport`
+- [AgentPulse](https://github.com/Conalh/AgentPulse) — live-mode trajectory verdict for AI coding sessions (TUI + CI gate); since v0.5.0 hosts its transcript parser here — imports `parseTranscriptDir`, the per-runtime line parsers (`parseAnthropicLine`, `parseCodexLine`, `detectAnthropicRuntime`, `isCodexLine`, `isCodexSessionMeta`), the `TranscriptEvent` / `Runtime` / `ParseOptions` types, plus `Finding` and `fingerprintFinding` for the exception baseline
 
 ## Contributing
 
