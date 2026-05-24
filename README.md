@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/agent-gov-core)](https://www.npmjs.com/package/agent-gov-core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Shared primitives for the AI-agent governance suite — a small library that ScopeTrail, PolicyMesh, CapabilityEcho, TaskBound, and SessionTrail all consume so common parsers, locators, and the `Finding` schema live in one place instead of five.
+Shared primitives for the AI-agent governance suite — a small library that ScopeTrail, PolicyMesh, CapabilityEcho, TaskBound, SessionTrail, and the GovVerdict meta-reviewer all consume so common parsers, locators, and the `Finding` schema live in one place instead of six.
 
 Zero runtime dependencies. ESM, TypeScript, target ES2022.
 
