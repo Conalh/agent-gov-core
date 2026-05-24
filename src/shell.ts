@@ -323,18 +323,24 @@ function readQuotedArg(input: string, start: number): string | null {
  */
 export function getCommandHead(subcommand: string): string {
   let s = subcommand.trimStart();
-  // Strip leading env var assignments: `FOO=bar BAZ=qux curl ...`
-  while (true) {
-    const m = /^([A-Za-z_][A-Za-z0-9_]*)=([^\s'"]*|"[^"]*"|'[^']*')\s+/.exec(s);
-    if (!m) break;
-    s = s.slice(m[0].length);
-  }
-  // Strip leading sudo / env wrappers, then also strip any wrapper flags
-  // (`sudo -E`, `env -i`) and embedded env vars (`env FOO=1 BAZ=qux curl`)
-  // before recursing. Without this, `sudo -E curl` would return `-E`.
-  const wrapperMatch = /^(sudo|nohup|env|exec|command|builtin|stdbuf|nice|ionice|setsid)\s+(.*)$/.exec(s);
-  if (wrapperMatch) {
-    return getCommandHead(stripWrapperPrefixes(wrapperMatch[2]!));
+  // Iterative wrapper-stripping. Was previously recursive; a pathological input
+  // like `sudo sudo sudo … curl` (20k repetitions) could blow the JS stack
+  // since V8 does not reliably do tail-call optimization. The 64-iteration cap
+  // is well above any plausible legitimate wrapper chain (`sudo nohup env …`)
+  // while still bounding worst-case time.
+  for (let depth = 0; depth < 64; depth++) {
+    // Strip leading env var assignments: `FOO=bar BAZ=qux curl ...`
+    while (true) {
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)=([^\s'"]*|"[^"]*"|'[^']*')\s+/.exec(s);
+      if (!m) break;
+      s = s.slice(m[0].length);
+    }
+    // Strip leading sudo / env wrappers, then also strip any wrapper flags
+    // (`sudo -E`, `env -i`) and embedded env vars (`env FOO=1 BAZ=qux curl`)
+    // before re-checking. Without this, `sudo -E curl` would return `-E`.
+    const wrapperMatch = /^(sudo|nohup|env|exec|command|builtin|stdbuf|nice|ionice|setsid)\s+(.*)$/.exec(s);
+    if (!wrapperMatch) break;
+    s = stripWrapperPrefixes(wrapperMatch[2]!);
   }
 
   // Now extract first token, honoring quoting and obfuscation neutralization.

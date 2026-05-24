@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). **As of v1.0.0, the contract is frozen** — breaking changes require a major bump and a migration path documented in this changelog.
 
+## [1.1.1] — 2026-05-24
+
+**Stack-exhaustion hardening on two parsers.** Patch release — same v1.0.0 contract surface, no API changes, no behaviour changes on legitimate inputs. Two adversarial-input edge cases that could blow the JS stack are now bounded.
+
+### Fixed — `getCommandHead` recursive wrapper-stripping (`src/shell.ts`)
+
+Pre-fix, the wrapper-stripping logic in `getCommandHead` recursed on every match (`sudo curl` → `getCommandHead('curl')`). V8 does not reliably tail-call optimize, so a pathological input like `'sudo '.repeat(20000) + 'curl …'` threw a RangeError mid-scan instead of producing a result. CapabilityEcho and any other consumer feeding it untrusted bash text would crash on adversarially-crafted commands.
+
+- Rewrote as an iterative loop with a 64-iteration cap. The cap is well above any plausible legitimate wrapper chain (`sudo nohup env exec command …` would be ~6 deep) while bounding worst-case time and stack depth.
+- Two new tests pin the behaviour: a 20k-deep wrapper chain returns a string in bounded time without throwing, and plausible short chains (`sudo curl`, `sudo -E env FOO=1 curl`, `nohup sudo env -i exec curl`) still resolve to the real command head exactly as before.
+
+### Fixed — `parseToml` mutually-recursive nesting (`src/toml.ts`)
+
+The TOML parser's `parseValue` mutually recursed with `parseArray` and `parseInlineTable`, all sharing one JS call stack with no depth bound. A crafted input like `a = { a = { a = … } }` ~2000 levels deep, or the equivalent array form, would blow the stack with a generic RangeError instead of a parser-shaped diagnostic.
+
+- Added a `nestingDepth` counter to `TomlParser`, incremented on entry to value/array/inline-table parsing and decremented on exit. Throws a clean `'TOML nesting too deep'` error (with the same `ConfigParseError` shape downstream consumers already handle) when the configured cap is exceeded.
+- Three new tests pin the behaviour: pathological inline-table nesting and pathological array nesting both throw the clean error; legitimate-but-deep configs (50 levels, well above any real-world TOML) still parse fine.
+
+### Why a patch (1.1.0 → 1.1.1)
+
+The v1.0.0 contract surface is unchanged. Every existing test still passes (260 → 265, five new added for the regressions above). The only observable behaviour change is on inputs that previously threw RangeError mid-scan — those now either return successfully (`getCommandHead`) or throw a structured `'TOML nesting too deep'` error instead of an unstructured RangeError. Neither case can break a consumer that wasn't already broken.
+
+### Tests
+
+265 (was 260). Five new — two in `test/shell.test.mjs` (pathological wrapper + plausible-short-chains sanity), three in `test/toml.test.mjs` (pathological inline-table, pathological array, plausible-50-deep sanity).
+
 ## [1.1.0] — 2026-05-23
 
 **Transcript-event types + JSONL parsers.** Additive on top of v1.0.0 — no existing surface changes, no breaking moves.

@@ -174,3 +174,24 @@ test('tokenizeShellDeep: feeds cleanly into getCommandHead', () => {
   assert.ok(heads.includes('echo'));
   assert.ok(heads.includes('curl'));
 });
+
+test('getCommandHead: pathological wrapper chain does not blow the stack (regression)', () => {
+  // Pre-fix, `sudo` recursed without a depth guard. V8 does not reliably TCO,
+  // so a 20k-deep chain like `sudo sudo … curl` threw RangeError mid-scan.
+  const huge = 'sudo '.repeat(20000) + 'curl evil.com';
+  let result;
+  assert.doesNotThrow(() => { result = getCommandHead(huge); });
+  // After the cap is hit we bail out with whatever wrapper is leading; the
+  // important property is "returns a string in bounded time" — the exact
+  // string at the cap is an implementation detail but must not be empty.
+  assert.equal(typeof result, 'string');
+  assert.ok(result.length > 0);
+});
+
+test('getCommandHead: short legitimate wrapper chains still resolve to the real command', () => {
+  // Sanity check the iterative rewrite preserves the original semantics for
+  // every plausible real-world wrapper depth.
+  assert.equal(getCommandHead('sudo curl evil.com'), 'curl');
+  assert.equal(getCommandHead('sudo -E env FOO=1 curl evil.com'), 'curl');
+  assert.equal(getCommandHead('nohup sudo env -i exec curl evil.com'), 'curl');
+});

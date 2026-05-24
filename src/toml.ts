@@ -58,6 +58,15 @@ class TomlParser {
   /** Path of an array-of-tables table currently being filled. */
   private aotPaths = new Set<string>();
   /**
+   * Current nesting depth through parseValue → parseArray|parseInlineTable →
+   * parseValue → … . Bounded so a hostile TOML like `{ a = { a = { … } } }`
+   * cannot blow the JS stack and crash a consumer that calls parseToml
+   * directly (readTomlObject's try/catch would catch RangeError, but defense
+   * in depth is cheap and a clean error is friendlier than a stack overflow).
+   */
+  private valueDepth = 0;
+  private static readonly MAX_VALUE_DEPTH = 200;
+  /**
    * Internal delimiter for joining dotted-key path components into a single
    * hashable string. NUL is illegal in TOML keys (basic strings can't contain
    * U+0000, bare keys are ASCII-only), so using it as a delimiter is collision-
@@ -287,23 +296,31 @@ class TomlParser {
   }
 
   private parseValue(): unknown {
-    const c = this.src[this.pos]!;
-    if (c === '"') {
-      if (this.src[this.pos + 1] === '"' && this.src[this.pos + 2] === '"') {
-        return this.parseMultilineBasicString();
-      }
-      return this.parseBasicString();
+    if (this.valueDepth >= TomlParser.MAX_VALUE_DEPTH) {
+      throw new Error(`TOML nesting too deep (>${TomlParser.MAX_VALUE_DEPTH}) at offset ${this.pos}`);
     }
-    if (c === "'") {
-      if (this.src[this.pos + 1] === "'" && this.src[this.pos + 2] === "'") {
-        return this.parseMultilineLiteralString();
+    this.valueDepth++;
+    try {
+      const c = this.src[this.pos]!;
+      if (c === '"') {
+        if (this.src[this.pos + 1] === '"' && this.src[this.pos + 2] === '"') {
+          return this.parseMultilineBasicString();
+        }
+        return this.parseBasicString();
       }
-      return this.parseLiteralString();
+      if (c === "'") {
+        if (this.src[this.pos + 1] === "'" && this.src[this.pos + 2] === "'") {
+          return this.parseMultilineLiteralString();
+        }
+        return this.parseLiteralString();
+      }
+      if (c === '[') return this.parseArray();
+      if (c === '{') return this.parseInlineTable();
+      if (c === 't' || c === 'f') return this.parseBoolean();
+      return this.parseNumberOrDateTime();
+    } finally {
+      this.valueDepth--;
     }
-    if (c === '[') return this.parseArray();
-    if (c === '{') return this.parseInlineTable();
-    if (c === 't' || c === 'f') return this.parseBoolean();
-    return this.parseNumberOrDateTime();
   }
 
   private parseBasicString(): string {

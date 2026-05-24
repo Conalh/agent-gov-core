@@ -188,3 +188,24 @@ test('rejects duplicate keys in inline tables (regression)', () => {
     /Duplicate key in inline table/,
   );
 });
+
+test('rejects pathological inline-table nesting cleanly (regression)', () => {
+  // Pre-fix, parseInlineTable ↔ parseValue mutually recursed without a depth
+  // guard, so `{ a = { a = { … } } }` ~1000 levels deep blew the stack.
+  // The parser must now throw a clean error well below the JS stack limit.
+  const deep = 'a = ' + '{ a = '.repeat(2000) + '1' + ' }'.repeat(2000);
+  assert.throws(() => parseToml(deep), /TOML nesting too deep/);
+});
+
+test('rejects pathological array nesting cleanly (regression)', () => {
+  // parseArray shares the same parseValue recursion — exercise the array path too.
+  const deep = 'a = ' + '['.repeat(2000) + '1' + ']'.repeat(2000);
+  assert.throws(() => parseToml(deep), /TOML nesting too deep/);
+});
+
+test('plausible nesting depths still parse fine', () => {
+  // Sanity: 50 levels is well above any real-world config and must still parse.
+  const ok = 'a = ' + '{ a = '.repeat(50) + '1' + ' }'.repeat(50);
+  const r = parseToml(ok);
+  assert.equal(typeof r.a, 'object');
+});
