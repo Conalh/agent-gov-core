@@ -77,6 +77,38 @@ test('matchSecret: never returns the literal credential', () => {
   }
 });
 
+test('matchSecret: prefix mid-token does NOT match (v1.2.1 boundary anchors)', () => {
+  // Each provider prefix is gated by (?:^|[^A-Za-z0-9_-]) — when the prefix
+  // appears mid-identifier (preceded by an alphanumeric or `_`/`-`), it must
+  // NOT match. Closes a false-positive class where a long compound token
+  // happens to contain a provider prefix as a substring.
+  assert.equal(matchSecret('commit_' + fake('AI' + 'za', 'SyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI')), undefined);
+  assert.equal(matchSecret('xyz' + fake('AK' + 'IA', 'IOSFODNN7EXAMPLE')), undefined);
+  assert.equal(matchSecret('foo' + fake('sk-' + 'ant-', ALPHA20)), undefined);
+  assert.equal(matchSecret('abc-' + fake('gh' + 'p_', ALPHA36)), undefined);
+});
+
+test('matchSecret: prefix at a real boundary still matches (v1.2.1 boundary anchors)', () => {
+  // Surround the credential with characters that are NOT in [A-Za-z0-9_-] so
+  // the left boundary still resolves: whitespace, quotes, colon, equals.
+  assert.equal(
+    matchSecret('Bearer ' + fake('AI' + 'za', 'SyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI'))?.provider,
+    'Google',
+  );
+  assert.equal(
+    matchSecret('"' + fake('AK' + 'IA', 'IOSFODNN7EXAMPLE') + '"')?.provider,
+    'AWS',
+  );
+  assert.equal(
+    matchSecret('Authorization: ' + fake('sk-' + 'ant-', ALPHA20))?.provider,
+    'Anthropic',
+  );
+  assert.equal(
+    matchSecret('TOKEN=' + fake('gh' + 'p_', ALPHA36))?.provider,
+    'GitHub',
+  );
+});
+
 test('SECRET_PATTERNS: golden — provider set is frozen', () => {
   // Adding providers is non-breaking. Removing or renaming requires a major
   // bump and consumer relock since consumers may key on these labels in

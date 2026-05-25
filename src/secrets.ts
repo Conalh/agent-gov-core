@@ -52,23 +52,31 @@ interface SecretPattern {
  * unambiguously identifies a credential class. The bare hex pattern is gated
  * to env/header context to avoid commit-SHA false positives.
  *
+ * **Left-boundary anchored (v1.2.1).** Each provider prefix is gated by
+ * `(?:^|[^A-Za-z0-9_-])` so the prefix only matches at the start of the
+ * input or after a non-identifier character. Closes a false-positive class
+ * where the prefix appears mid-token inside a longer compound identifier
+ * (e.g. `mycommit_AIza…` no longer flags as Google; `Bearer AIza…` still
+ * does). The hex-token pattern carried its own boundary anchors from v0.7.0
+ * and is unchanged here.
+ *
  * Stable as of v0.7.0 — additions are non-breaking, removals or shape changes
  * require a major bump (the golden compatibility tests in `test/golden.test.mjs`
  * pin the current provider set).
  */
 export const SECRET_PATTERNS: readonly Readonly<SecretPattern>[] = [
-  { provider: 'Anthropic', regex: /sk-ant-[A-Za-z0-9_-]{20,}/ },
-  { provider: 'OpenAI', regex: /sk-proj-[A-Za-z0-9_-]{20,}/ },
-  { provider: 'OpenAI', regex: /sk-(?!ant-|proj-)[A-Za-z0-9]{32,}/ },
-  { provider: 'GitHub', regex: /gh[pousr]_[A-Za-z0-9]{36,}/ },
-  { provider: 'GitHub', regex: /github_pat_[A-Za-z0-9_]{20,}/ },
-  { provider: 'Slack', regex: /xox[abprs]-[A-Za-z0-9-]{20,}/ },
-  { provider: 'AWS', regex: /AKIA[0-9A-Z]{16}/ },
-  { provider: 'Google', regex: /AIza[0-9A-Za-z_-]{35}/ },
-  { provider: 'GitLab', regex: /glpat-[A-Za-z0-9_-]{20,}/ },
-  { provider: 'npm', regex: /npm_[A-Za-z0-9]{36}/ },
-  { provider: 'Docker', regex: /dckr_pat_[A-Za-z0-9_-]{20,}/ },
-  { provider: 'Stripe', regex: /(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}/ },
+  { provider: 'Anthropic', regex: /(?:^|[^A-Za-z0-9_-])sk-ant-[A-Za-z0-9_-]{20,}/ },
+  { provider: 'OpenAI', regex: /(?:^|[^A-Za-z0-9_-])sk-proj-[A-Za-z0-9_-]{20,}/ },
+  { provider: 'OpenAI', regex: /(?:^|[^A-Za-z0-9_-])sk-(?!ant-|proj-)[A-Za-z0-9]{32,}/ },
+  { provider: 'GitHub', regex: /(?:^|[^A-Za-z0-9_-])gh[pousr]_[A-Za-z0-9]{36,}/ },
+  { provider: 'GitHub', regex: /(?:^|[^A-Za-z0-9_-])github_pat_[A-Za-z0-9_]{20,}/ },
+  { provider: 'Slack', regex: /(?:^|[^A-Za-z0-9_-])xox[abprs]-[A-Za-z0-9-]{20,}/ },
+  { provider: 'AWS', regex: /(?:^|[^A-Za-z0-9_-])AKIA[0-9A-Z]{16}/ },
+  { provider: 'Google', regex: /(?:^|[^A-Za-z0-9_-])AIza[0-9A-Za-z_-]{35}/ },
+  { provider: 'GitLab', regex: /(?:^|[^A-Za-z0-9_-])glpat-[A-Za-z0-9_-]{20,}/ },
+  { provider: 'npm', regex: /(?:^|[^A-Za-z0-9_-])npm_[A-Za-z0-9]{36}/ },
+  { provider: 'Docker', regex: /(?:^|[^A-Za-z0-9_-])dckr_pat_[A-Za-z0-9_-]{20,}/ },
+  { provider: 'Stripe', regex: /(?:^|[^A-Za-z0-9_-])(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}/ },
   // env/header context only — see comment block at top of file.
   { provider: 'Hex token', regex: /(?:^|[^A-Fa-f0-9])([A-Fa-f0-9]{40,})(?:$|[^A-Fa-f0-9])/, envOrHeaderOnly: true },
 ];
