@@ -33,7 +33,13 @@ import {
   normalizeMcpCommand,
 } from '../dist/index.js';
 
-const BUDGET_MS = 50;
+// ReDoS protection is about catching CATASTROPHIC blowup (seconds → minutes
+// when an adversary picks the wrong regex). A tight 50ms budget flaked on
+// GitHub Actions runners — a healthy parse hovered around 30-45ms on those
+// shared VMs and occasionally tipped over. 150ms keeps the test sensitive to
+// real ReDoS regressions (which present as orders-of-magnitude blowups, not
+// 50ms vs 100ms) while tolerating runner jitter. v1.2.2.
+const BUDGET_MS = 150;
 const BIG = 100_000;
 
 /**
