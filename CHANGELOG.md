@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). **As of v1.0.0, the contract is frozen** — breaking changes require a major bump and a migration path documented in this changelog.
 
+## [1.2.1] — 2026-05-25
+
+**Two quality patches from the v1.1.1 external inspection round.** Patch release — no API changes, no schema changes, no fingerprint or canonical-string changes. Two memory- and precision-related improvements queued in the v1.1.1 report and held back from v1.2.0 (which was reserved for the Antigravity runtime).
+
+### Changed — `parseFile` streams instead of buffering (`src/parsers/parse-transcript-dir.ts`)
+
+Pre-fix, `parseFile` read the entire transcript into a single string with `readFile(path, 'utf8')` and then `raw.split(/\r?\n/)` into an array of every line. For a 200 MB accumulated session history that's a 200 MB raw string plus an array of tens of thousands of line strings held simultaneously, producing GC spikes proportional to file size.
+
+- Swapped to `createReadStream(path)` piped through `readline.createInterface({ crlfDelay: Infinity })` and iterated with `for await (...)`. Each line is processed and released as we go; memory profile is now bounded by the longest single line rather than file size.
+- `crlfDelay: Infinity` collapses `\r\n` line endings on Windows-emitted transcripts so we don't emit empty interleaved lines.
+- Three new tests pin the behaviour: CRLF line endings parse identically to LF, a file without a trailing newline still yields its last event, and a 5000-line transcript parses to 5000 events.
+
+### Fixed — boundary anchors on credential prefixes (`src/secrets.ts`)
+
+Pre-fix, each provider regex (`AIza…`, `AKIA…`, `sk-ant-…`, `ghp_…`, etc.) was an unanchored substring match. A long compound identifier that happened to contain a provider prefix mid-token — `mycommit_AIzaSyDdI0…`, `xyzAKIAIOSFODNN7EXAMPLE` — would false-positive as that provider. Reported in the v1.1.1 inspection as a class of false positives on long base64 transactions.
+
+- Each provider regex is now gated by `(?:^|[^A-Za-z0-9_-])` so the prefix only matches at the start of the input or after a non-identifier character. Whitespace, quotes, colon, equals, and other separators still resolve as boundaries — `Bearer AIza…`, `"AKIA…"`, `Authorization: sk-ant-…`, `TOKEN=ghp_…` all still match cleanly.
+- The hex-token pattern carried its own boundary anchors from v0.7.0 and is unchanged.
+- Two new tests pin the behaviour: prefix-mid-token shapes are NOT flagged across four providers (Google, AWS, Anthropic, GitHub); prefix-at-boundary shapes still ARE flagged across the same four.
+
+### Why a patch (1.2.0 → 1.2.1)
+
+The v1.0.0 contract surface is unchanged. The streaming swap has no observable behavior change on legitimate inputs — same events, same order, same skip counts. The boundary-anchor change narrows what matches: strings that previously matched but where the prefix was buried inside a longer identifier no longer match. This is a precision fix, not a contract change — consumers that were relying on the broader matching were carrying a latent false-positive, not a documented behavior.
+
+### Tests
+
+276 (was 271). Five new — three in `test/parsers.test.mjs` (CRLF, no-trailing-newline, 5k-line streaming smoke), two in `test/secrets.test.mjs` (prefix-mid-token negatives across 4 providers, prefix-at-boundary positives across the same 4).
+
 ## [1.2.0] — 2026-05-25
 
 **Native Antigravity stateless parser integration.** Additive minor bump — no breaking changes on the existing v1.1.0 / v1.0.0 contract surfaces. Adds native line-by-line parsing support for Google DeepMind's Antigravity transcript logs.
