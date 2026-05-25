@@ -21,6 +21,11 @@ export {
 } from './codex.js';
 
 export {
+  isAntigravityLine,
+  parseAntigravityLine,
+} from './antigravity.js';
+
+export {
   coerceTimestamp,
   extractExitCode,
   extractTextFromBlocks,

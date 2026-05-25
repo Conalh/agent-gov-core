@@ -29,6 +29,10 @@ import {
   isCodexSessionMeta,
   parseCodexLine,
 } from './codex.js';
+import {
+  isAntigravityLine,
+  parseAntigravityLine,
+} from './antigravity.js';
 import { interpolateTimestamps, isRecord } from './util.js';
 
 /**
@@ -94,6 +98,7 @@ async function parseFile(path: string): Promise<FileParseResult> {
   const events: TranscriptEvent[] = [];
   let lines = 0;
   let skipped = 0;
+  const activeToolCalls = new Map<string, string>();
 
   // Per-LINE codex detection (vs. per-session sticky flag) — a mixed-runtime
   // file (rare but real, e.g. Cursor transcripts copied into a Claude Code
@@ -117,6 +122,15 @@ async function parseFile(path: string): Promise<FileParseResult> {
     if (isCodexSessionMeta(parsed) || isCodexLine(parsed)) {
       const out = parseCodexLine(parsed);
       if (out) {
+        events.push(...out);
+        continue;
+      }
+    }
+
+    // Antigravity path: only when this specific line is an Antigravity shape.
+    if (isAntigravityLine(parsed)) {
+      const out = parseAntigravityLine(parsed, activeToolCalls);
+      if (out && out.length > 0) {
         events.push(...out);
         continue;
       }

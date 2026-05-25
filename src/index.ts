@@ -88,6 +88,8 @@ export {
   isCodexLine,
   isCodexSessionMeta,
   parseCodexLine,
+  isAntigravityLine,
+  parseAntigravityLine,
   // Helpers shared across runtimes.
   coerceTimestamp,
   extractExitCode,

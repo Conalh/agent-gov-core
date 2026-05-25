@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). **As of v1.0.0, the contract is frozen** — breaking changes require a major bump and a migration path documented in this changelog.
 
+## [1.2.0] — 2026-05-25
+
+**Native Antigravity stateless parser integration.** Additive minor bump — no breaking changes on the existing v1.1.0 / v1.0.0 contract surfaces. Adds native line-by-line parsing support for Google DeepMind's Antigravity transcript logs.
+
+### Added
+
+- **`parsers/antigravity.ts`** — a sequential stateless parser for Antigravity transcript lines. Supports `USER_INPUT` (unwrapping `<USER_REQUEST>` blocks), `PLANNER_RESPONSE` (emitting tool calls and assistant messages conditionally to prevent empty placeholders), and `MODEL` execution results (linking tool calls and results sequentially via a caller-supplied map).
+- **`CommandLine` -> `command` Normalization** — automatically maps Antigravity's `CommandLine` parameter to standard `command` inside `toolInput` so downstream verifiers function with zero modifications.
+- **`Cwd` / `DirectoryPath` / `SearchPath` extraction** — extracts the active working directory to the event level for robust relative path analysis and drift detection.
+- **Verified Exit Code Extraction** — anchors on `exit code:\s*(-?\d+)` from verified log execution blocks to cleanly capture tests and build outputs.
+
+### Changed
+
+- **`transcript-events.ts`** — registered `'antigravity'` in the standard `Runtime` union type.
+- **`parsers/index.ts`** — exported `isAntigravityLine` and `parseAntigravityLine` publicly from the package entry point.
+- **`parse-transcript-dir.ts`** — integrated the Antigravity dispatch routing in the core Walk loop.
+
+### Tests
+
+- 6 new dedicated unit tests inside `test/antigravity.test.mjs` ensuring 100% code coverage across all parsing, unwrap, exit code extraction, and defensive fallback scenarios.
+
 ## [1.1.1] — 2026-05-24
 
 **Stack-exhaustion hardening on two parsers.** Patch release — same v1.0.0 contract surface, no API changes, no behaviour changes on legitimate inputs. Two adversarial-input edge cases that could blow the JS stack are now bounded.

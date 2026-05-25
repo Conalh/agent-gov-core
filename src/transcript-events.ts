@@ -19,7 +19,7 @@
  * where a parser can't tell — by contract the parsers prefer concrete
  * runtimes, so callers rarely see `'unknown'` in practice.
  */
-export type Runtime = 'claude-code' | 'cursor' | 'codex' | 'unknown';
+export type Runtime = 'claude-code' | 'cursor' | 'codex' | 'antigravity' | 'unknown';
 
 /**
  * Discriminator for the canonical event shape. `'system'` is the catchall
