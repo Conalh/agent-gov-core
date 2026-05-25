@@ -16,8 +16,10 @@
  *  - TypeScript strict, ESM, Node 20+.
  */
 
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 
 import type { ParseOptions, TranscriptEvent } from '../transcript-events.js';
 import {
@@ -94,11 +96,22 @@ interface FileParseResult {
 }
 
 async function parseFile(path: string): Promise<FileParseResult> {
-  const raw = await readFile(path, 'utf8');
   const events: TranscriptEvent[] = [];
   let lines = 0;
   let skipped = 0;
   const activeToolCalls = new Map<string, string>();
+
+  // Stream the file line-by-line via readline instead of buffering the whole
+  // transcript in memory. Long-running sessions can accumulate hundreds of
+  // MB of history; the previous `readFile + split` shape held a copy of the
+  // raw text AND an array of every line simultaneously, producing GC spikes
+  // proportional to file size. `crlfDelay: Infinity` collapses `\r\n` line
+  // endings (Windows-emitted transcripts) so we don't emit empty interleaved
+  // lines between them.
+  const rl = createInterface({
+    input: createReadStream(path, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
 
   // Per-LINE codex detection (vs. per-session sticky flag) — a mixed-runtime
   // file (rare but real, e.g. Cursor transcripts copied into a Claude Code
@@ -106,7 +119,7 @@ async function parseFile(path: string): Promise<FileParseResult> {
   // codex because parseCodexLine's `default` branch always returns a system
   // event. Route to the codex parser only when the LINE itself looks like a
   // codex shape.
-  for (const line of raw.split(/\r?\n/)) {
+  for await (const line of rl) {
     if (!line.trim()) continue;
     lines += 1;
 

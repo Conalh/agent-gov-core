@@ -178,6 +178,74 @@ test('skips malformed lines without throwing', async () => {
   }
 });
 
+test('streaming reader: handles CRLF line endings', async () => {
+  // v1.2.1 — parseFile uses node:readline + createReadStream with
+  // crlfDelay: Infinity so a Windows-emitted transcript with \r\n line
+  // endings parses identically to one with \n.
+  const dir = tmpDir();
+  const lf = [
+    '{"type":"user","message":{"content":[{"type":"text","text":"hello"}]}}',
+    '{"type":"assistant","message":{"content":[{"type":"text","text":"hi back"}]}}',
+  ].join('\n');
+  const crlf = lf.replace(/\n/g, '\r\n') + '\r\n';
+  writeFileSync(join(dir, 'crlf.jsonl'), crlf);
+  try {
+    const events = await parseTranscriptDir(dir);
+    assert.equal(events.length, 2);
+    assert.equal(events[0].text, 'hello');
+    assert.equal(events[1].text, 'hi back');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('streaming reader: parses last line without trailing newline', async () => {
+  // readline emits the final line whether or not it ends in \n. Pin it so
+  // a partial-write transcript (active session writing a line right when
+  // the parser opens the file) doesn't silently drop the last event.
+  const dir = tmpDir();
+  writeFileSync(
+    join(dir, 'no-trailing.jsonl'),
+    '{"type":"user","message":{"content":[{"type":"text","text":"only line"}]}}'
+  );
+  try {
+    const events = await parseTranscriptDir(dir);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].text, 'only line');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('streaming reader: parses a 5k-line transcript without buffering whole file', async () => {
+  // Smoke test for the streaming swap — produce a file larger than any
+  // realistic chunk size (≈1 MB) and confirm we parse every line. The
+  // previous readFile+split path would have allocated the raw string plus
+  // the split array; with streaming each line is processed and released
+  // as we go. We can't directly assert RSS here, but full-count parity is
+  // sufficient evidence the streaming loop walks the whole file.
+  const dir = tmpDir();
+  const lines = [];
+  for (let i = 0; i < 5000; i += 1) {
+    lines.push(
+      JSON.stringify({
+        type: 'user',
+        timestamp: '2026-05-25T00:00:00.000Z',
+        message: { content: [{ type: 'text', text: `msg ${i}` }] },
+      })
+    );
+  }
+  writeFileSync(join(dir, 'big.jsonl'), lines.join('\n') + '\n');
+  try {
+    const events = await parseTranscriptDir(dir, { silent: true });
+    assert.equal(events.length, 5000);
+    assert.equal(events[0].text, 'msg 0');
+    assert.equal(events[4999].text, 'msg 4999');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('walks subdirectories and merges results chronologically', async () => {
   const dir = tmpDir();
   const sub = join(dir, 'nested');
