@@ -61,6 +61,16 @@ export { normalizeMcpCommand } from './mcp.js';
 
 export { tokenizeShell, tokenizeShellDeep, getCommandHead } from './shell.js';
 
+// v1.3.0 — shared diff-input safety guards (git-ref validation, path
+// containment, byte caps). Promoted out of ScopeTrail/TaskBound and applied
+// across every detector that ingests an untrusted diff.
+export {
+  isValidGitRef,
+  resolveWithinRoot,
+  withinByteCap,
+  DEFAULT_MAX_INPUT_BYTES,
+} from './diff-inputs.js';
+
 export type { WorkflowSummaryOptions } from './action.js';
 export {
   rankSeverity,

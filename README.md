@@ -180,6 +180,14 @@ The `tool` enum is deliberately closed to the **five** finding-emitting analyzer
 - `tokenizeShellDeep(command)` — extracts commands nested inside `$()`, backticks, and `bash -c` / `sh -c` / `python -c` payloads
 - `getCommandHead(subcommand)` — extract the leading verb after tokenization
 
+### Diff-input safety
+
+Guards for the boundary where an untrusted diff (a PR branch, a pair of directories) enters a `git` subprocess or a `readFile`. Promoted out of ScopeTrail and TaskBound so every detector applies the same rules.
+
+- `isValidGitRef(ref)` — reject refs `git` would re-parse as a CLI flag (`-`-leading), as an object selector (`:`), or that carry control characters. Pure string check; callers still run `git rev-parse --verify` to confirm the ref resolves.
+- `resolveWithinRoot(root, relativePath)` — resolve a path against `root`, returning the absolute path only if it stays inside `root` (else `null`). Stops `..`/absolute-path traversal before any read. Callers must also skip symlinked directory entries during the walk.
+- `withinByteCap(byteLength, cap?)` / `DEFAULT_MAX_INPUT_BYTES` — pure size-cap predicate (default 10 MiB) so detectors can skip oversized inputs. Fails closed on non-finite or negative sizes.
+
 ### Transcript parsing
 
 Normalizes Claude Code, Cursor, Codex, and Antigravity session JSONL into one event stream — promoted out of the copies once vendored separately in SessionTrail and AgentPulse so every tool shares one parser surface that can't drift.

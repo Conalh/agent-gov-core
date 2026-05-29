@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). **As of v1.0.0, the contract is frozen** — breaking changes require a major bump and a migration path documented in this changelog.
 
+## [1.3.0] — 2026-05-28
+
+**Shared diff-input safety guards.** New module `src/diff-inputs.ts` exporting three pure helpers that every detector ingesting an untrusted diff (a PR branch, a pair of directories) should run at its input boundary. Additive — no existing API, schema, fingerprint, or canonical-string changes. Minor bump because the export surface grows.
+
+### Added — `isValidGitRef(ref): boolean` (`src/diff-inputs.ts`)
+
+Promoted out of ScopeTrail's `verifyGitRef` guard. Rejects refs that `git` would re-parse as a CLI flag (`-`-leading: `--upload-pack=…`, `--help`), as an object-selector re-anchor (contains `:`, which would change what `git show <ref>:<path>` reads), or that contain control characters. `execFile` already blocks shell-metacharacter injection, but it passes the ref to `git` as a positional argument that git re-parses against its own option table, so a `-`-leading ref is an argument-injection vector. Pure string check — callers still run `git rev-parse --verify` (wrapped in their own error type) to confirm the ref resolves.
+
+This closed a real gap: ScopeTrail had this guard, but **TaskBound and CapabilityEcho did not** — their ref handling went straight to `rev-parse`/`git show` with no flag/colon/control-char check. Consumers adopt the shared helper in their next release.
+
+### Added — `resolveWithinRoot(root, relativePath): string | null` (`src/diff-inputs.ts`)
+
+Promoted out of TaskBound's `safeJoin`. Resolves `relativePath` against `root` and returns the absolute path only if it stays inside `root`, else `null`. `path.resolve` collapses `..` without touching the filesystem, so string-level traversal (`../etc/passwd`, an absolute path, a sibling-prefix climb like `../repo-secrets`) is caught before any `readFile`. Symlinks resolve at read time, not by `resolve`, so callers must *also* skip symlinked directory entries during the walk — this guard only stops string traversal.
+
+### Added — `withinByteCap(byteLength, cap?): boolean` + `DEFAULT_MAX_INPUT_BYTES` (`src/diff-inputs.ts`)
+
+Pure size-cap predicate so detectors can `stat` a file (or measure a buffer) and skip oversized inputs without each hard-coding its own limit. Default ceiling is 10 MiB, matching the per-file `maxBuffer` the suite already uses for `git show`/`git diff` output, so adopting it does not change behavior on real source trees. Fails closed (returns `false`) on non-finite or negative sizes.
+
+### Tests
+
+`test/diff-inputs.test.mjs` — 13 cases covering ordinary refs, flag/colon/control-char rejection, the trailing-space case the guard deliberately does *not* police, path containment (traversal, absolute, sibling-prefix), and the byte cap (default, custom, fail-closed).
+
 ## [1.2.1] — 2026-05-25
 
 **Two quality patches from the v1.1.1 external inspection round.** Patch release — no API changes, no schema changes, no fingerprint or canonical-string changes. Two memory- and precision-related improvements queued in the v1.1.1 report and held back from v1.2.0 (which was reserved for the Antigravity runtime).
