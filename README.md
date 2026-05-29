@@ -47,6 +47,7 @@ The suite only works if every tool agrees on what a finding is, how severity rol
 | **Config parsing** | JSONC and TOML readers with source text and structured parse errors. |
 | **Source location** | JSON/TOML line locators, offset-to-line/column helpers, GitHub annotation formatting. |
 | **Detector helpers** | MCP command normalization, shell tokenization, secret matching, workflow summary rendering. |
+| **Transcript parsing** | Claude Code / Cursor / Codex / Antigravity session JSONL normalized into one `TranscriptEvent` stream. |
 | **Test fixtures** | Temp repo and old/new fixture builders for consumer tool test suites. |
 
 ## Install
@@ -120,6 +121,8 @@ Malformed reports go to `merged.invalidReports`; malformed individual findings g
 
 The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json) is the source of truth for dotted-kind shape, closed `tool` enum, and location fields. Any tool emitting unprefixed kinds fails validation. See [CONTRIBUTING.md](./CONTRIBUTING.md#the-finding-schema-is-the-contract) for how the TypeScript types and JSON schema stay in lockstep.
 
+The `tool` enum is deliberately closed to the **five** finding-emitting analyzers — `scope_trail`, `policy_mesh`, `capability_echo`, `task_bound`, `session_trail`. That is fewer than the seven suite repos that depend on this package: GovVerdict *merges* findings via `mergeFindings` rather than emitting its own, and AgentPulse consumes the transcript and `Finding` primitives for live trajectory work. Adding a sixth emitter means updating the `ToolKind` union, `TOOL_KINDS`, and the schema's `tool` enum together — the test suite fails if they drift.
+
 ## What's in the library
 
 ### Finding schema and helpers
@@ -177,6 +180,18 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - `tokenizeShellDeep(command)` — extracts commands nested inside `$()`, backticks, and `bash -c` / `sh -c` / `python -c` payloads
 - `getCommandHead(subcommand)` — extract the leading verb after tokenization
 
+### Transcript parsing
+
+Normalizes Claude Code, Cursor, Codex, and Antigravity session JSONL into one event stream — promoted out of the copies once vendored separately in SessionTrail and AgentPulse so every tool shares one parser surface that can't drift.
+
+- `TranscriptEvent` — the normalized cross-runtime event: `timestamp`, `runtime`, `kind`, plus optional `text` / `toolName` / `toolInput` / `toolResultText` / `toolResultExitCode` / `cwd` / `toolUseId` / `raw`
+- `Runtime` (`'claude-code' | 'cursor' | 'codex' | 'antigravity' | 'unknown'`), `EventKind` (`'user_message' | 'assistant_message' | 'tool_use' | 'tool_result' | 'system'`), `ParseOptions` (`since` / `until` time filters, `silent`)
+- `parseTranscriptDir(dir, opts?)` — top-level entry point: read a directory of transcripts into a sorted, normalized event stream
+- `detectAnthropicRuntime(...)`, `parseAnthropicLine(...)` — Claude Code / Cursor (Anthropic-shaped `tool_use`) lines
+- `isCodexLine(...)`, `isCodexSessionMeta(...)`, `parseCodexLine(...)` — Codex `response_item` function calls and session metadata
+- `isAntigravityLine(...)`, `parseAntigravityLine(...)` — Antigravity transcript lines
+- `coerceTimestamp`, `extractExitCode`, `extractTextFromBlocks`, `extractToolResultText`, `interpolateTimestamps`, `isRecord` — shared helpers for callers that already hold a parsed line
+
 ### GitHub Action helpers
 
 - `rankSeverity(s)`, `passesSeverityThreshold(s, threshold)`, `anyAtOrAbove(findings, threshold)`
@@ -195,6 +210,7 @@ The JSON schema at [`schemas/finding.schema.json`](./schemas/finding.schema.json
 - **Invalid inputs stay visible.** Merge helpers preserve invalid reports and malformed findings instead of silently dropping them.
 - **Zero runtime dependencies.** Real TOML, JSONC, MCP normalization, shell tokenization, and helpers without transitive runtime supply chain.
 - **Stable enough to compose.** Fingerprints are stable across message rewording, and report validation keeps cross-tool outputs honest.
+- **Tested.** 276 tests (`npm test`) pin the TypeScript-types ↔ JSON-schema lockstep, fingerprint stability, TOML/JSONC parsing edge cases, secret-prefix boundary anchoring, ReDoS time budgets, and the transcript parsers — the regressions that would silently break every downstream tool at once.
 
 ## Used by
 
