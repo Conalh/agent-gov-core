@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). **As of v1.0.0, the contract is frozen** — breaking changes require a major bump and a migration path documented in this changelog.
 
+## [1.4.0] — 2026-05-28
+
+**New `barbican` tool kind.** Barbican is the suite's runtime MCP-proxy enforcement layer; it emits Findings for tool-poisoning screening of `tools/list` descriptions and for runtime policy decisions, which previously had no honest home in the closed `ToolKind` enum. Additive — no existing tool, schema field, fingerprint, or canonical-string behavior changes. Minor bump because the closed enum (a public contract) grows by one member.
+
+### Added — `'barbican'` member of `ToolKind`
+
+Added to the `ToolKind` union, `TOOL_KINDS`, the `kind` pattern regex in `src/finding.ts`, and the `tool` enum + `kind` pattern in `schemas/finding.schema.json` — the four sites the contract keeps in lockstep. `isToolKind('barbican')` and namespaced kinds like `barbican.tool_poisoning` now validate. Existing consumers are unaffected; they simply gain the ability to ingest and dedupe Barbican's reports.
+
+### Tests
+
+`test/finding.test.mjs` — extended the `ToolKind` constant, schema-enum, type-guard, and namespaced-kind cases to cover `barbican`.
+
 ## [1.3.0] — 2026-05-28
 
 **Shared diff-input safety guards.** New module `src/diff-inputs.ts` exporting three pure helpers that every detector ingesting an untrusted diff (a PR branch, a pair of directories) should run at its input boundary. Additive — no existing API, schema, fingerprint, or canonical-string changes. Minor bump because the export surface grows.

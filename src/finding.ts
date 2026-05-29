@@ -13,7 +13,8 @@ export type ToolKind =
   | 'policy_mesh'
   | 'capability_echo'
   | 'task_bound'
-  | 'session_trail';
+  | 'session_trail'
+  | 'barbican';
 
 export interface FindingLocation {
   file: string;
@@ -58,6 +59,7 @@ export const TOOL_KINDS: readonly ToolKind[] = [
   'capability_echo',
   'task_bound',
   'session_trail',
+  'barbican',
 ];
 
 export function isSeverity(value: unknown): value is Severity {
@@ -84,7 +86,7 @@ export function kind<T extends ToolKind>(tool: T, name: string): `${T}.${string}
   return `${tool}.${name}` as `${T}.${string}`;
 }
 
-const KIND_PATTERN = /^(scope_trail|policy_mesh|capability_echo|task_bound|session_trail)\.[a-z0-9_]+$/;
+const KIND_PATTERN = /^(scope_trail|policy_mesh|capability_echo|task_bound|session_trail|barbican)\.[a-z0-9_]+$/;
 
 /**
  * Runtime guard matching the JSON schema's `kind` pattern. Useful for

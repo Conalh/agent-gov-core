@@ -14,12 +14,13 @@
         "policy_mesh",
         "capability_echo",
         "task_bound",
-        "session_trail"
+        "session_trail",
+        "barbican"
       ]
     },
     "kind": {
       "type": "string",
-      "pattern": "^(scope_trail|policy_mesh|capability_echo|task_bound|session_trail)\\.[a-z0-9_]+$",
+      "pattern": "^(scope_trail|policy_mesh|capability_echo|task_bound|session_trail|barbican)\\.[a-z0-9_]+$",
       "description": "Namespaced kind: `<tool_kind>.<short_slug>`."
     },
     "severity": {

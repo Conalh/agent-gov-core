@@ -24,6 +24,7 @@ test('ToolKind constants', () => {
     'capability_echo',
     'task_bound',
     'session_trail',
+    'barbican',
   ]);
 });
 
@@ -32,6 +33,7 @@ test('type guards', () => {
   assert.equal(isSeverity('LOW'), false);
   assert.equal(isSeverity(1), false);
   assert.equal(isToolKind('scope_trail'), true);
+  assert.equal(isToolKind('barbican'), true);
   assert.equal(isToolKind('unknown'), false);
 });
 
@@ -44,8 +46,10 @@ test('JSON Schema is valid JSON with expected enums', () => {
     'capability_echo',
     'task_bound',
     'session_trail',
+    'barbican',
   ]);
   assert.match(schema.properties.kind.pattern, /scope_trail/);
+  assert.match(schema.properties.kind.pattern, /barbican/);
 });
 
 test('kind() constructs namespaced kinds from a ToolKind + slug', () => {
@@ -65,6 +69,7 @@ test('isNamespacedKind matches the JSON schema pattern', () => {
   assert.equal(isNamespacedKind('scope_trail.permission_allow_widened'), true);
   assert.equal(isNamespacedKind('policy_mesh.mcp_command_mismatch'), true);
   assert.equal(isNamespacedKind('session_trail.privileged_path_access'), true);
+  assert.equal(isNamespacedKind('barbican.tool_poisoning'), true);
 
   assert.equal(isNamespacedKind('permission_allow_widened'), false); // no prefix
   assert.equal(isNamespacedKind('unknown_tool.foo'), false);          // bad prefix
